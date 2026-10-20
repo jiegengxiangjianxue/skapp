@@ -31,7 +31,7 @@ def _try_rust():
         return None
 
 def _ranks(vals):
-    """截面 rank（升序归一 0..1），平值同名次；Rust 可用则加速"""
+    """截面 rank（升序归一 0..1），平值取平均名次；Rust 可用则加速"""
     core = _try_rust()
     if core and all(v == v for v in vals):  # 无 NaN 才走 Rust
         return core.cross_rank(vals)
@@ -40,8 +40,15 @@ def _ranks(vals):
         return [0.0] * n
     order = sorted(range(n), key=lambda i: vals[i])
     ranks = [0.0] * n
-    for r, i in enumerate(order):
-        ranks[i] = r / (n - 1)
+    i = 0
+    while i < n:
+        j = i
+        while j + 1 < n and vals[order[j + 1]] == vals[order[i]]:
+            j += 1
+        avg = (i + j) / 2 / (n - 1)
+        for k in range(i, j + 1):
+            ranks[order[k]] = avg
+        i = j + 1
     return ranks
 
 def analyze(symbols: list[str]) -> dict:
