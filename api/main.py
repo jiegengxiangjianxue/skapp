@@ -12,6 +12,7 @@ sys.path.insert(0, HERE)
 from skapp_pkg.datasrc.market_data import realtime_quotes, news_feed
 from skapp_pkg.engine.analyze import analyze
 from skapp_pkg.pipeline.eod_sync import make_snapshot
+from skapp_pkg.engine.picks import picks as engine_picks
 
 app = FastAPI(title="skapp API", version="0.1.0")
 
@@ -45,8 +46,16 @@ def analyze_batch(body: SymbolsBody):
 
 @app.get("/api/v1/picks")
 def picks():
-    """当日推股 (快照)"""
+    """当日推股：优先引擎产物，缺省回落到今日快照"""
+    ep = engine_picks()
+    if ep.get("items"):
+        return ep
     return _snap(dt.date.today().isoformat()).get("picks", {})
+
+@app.get("/api/v1/engine/picks")
+def engine_picks_api(n: int = 10):
+    """引擎选股产物（engine_fusion / picks_latest）"""
+    return engine_picks(n)
 
 @app.get("/api/v1/review/{date}")
 def review(date: str):
