@@ -9,9 +9,9 @@ from pydantic import BaseModel
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, HERE)
 
-from py.datasrc.market_data import realtime_quotes, news_feed
-from py.engine.analyze import analyze
-from py.pipeline.eod_sync import make_snapshot
+from skapp_pkg.datasrc.market_data import realtime_quotes, news_feed
+from skapp_pkg.engine.analyze import analyze
+from skapp_pkg.pipeline.eod_sync import make_snapshot
 
 app = FastAPI(title="skapp API", version="0.1.0")
 
