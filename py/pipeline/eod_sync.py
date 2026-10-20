@@ -5,7 +5,7 @@
 from __future__ import annotations
 import json, os, shutil, datetime as dt
 
-HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+HERE = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 DATA = os.path.join(HERE, "data")
 
 def make_snapshot(date: str | None = None) -> dict:
