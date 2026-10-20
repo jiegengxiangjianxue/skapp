@@ -47,7 +47,7 @@ def realtime_quotes(symbols: list[str]) -> list[dict]:
 # ---------- 日线（新浪主源，含约 2011+ 全史） ----------
 def daily_sina(symbol: str, scale: int = 240, datalen: int = 1023) -> list[dict]:
     sym = norm(symbol)
-    url = (f"https://quotes.sina.cn/cn/api/jsonp_v2.php/var d=/CN_MarketDataService.getKLineData"
+    url = (f"https://quotes.sina.cn/cn/api/jsonp_v2.php/var%20d=/CN_MarketDataService.getKLineData"
            f"?symbol={sym[:2].replace('sh','sh').replace('sz','sz')}{sym[2:]}"
            f"&scale={scale}&ma=no&datalen={datalen}")
     # 新浪要求带市场前缀的原始格式，如 sh600519
