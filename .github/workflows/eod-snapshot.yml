@@ -1,0 +1,36 @@
+name: eod-snapshot
+
+on:
+  schedule:
+    - cron: '35 7 * * 1-5'   # UTC 7:35 = 北京 15:35 收盘后
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: eod-snapshot
+  cancel-in-progress: false
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install pyyaml fastapi uvicorn pydantic
+      - name: Generate EOD snapshot
+        run: python -m py.pipeline.eod_sync
+        env:
+          TZ: Asia/Shanghai
+      - name: Commit snapshot
+        run: |
+          git config user.name skapp-bot
+          git config user.email bot@skapp.local
+          git pull --rebase
+          git add data/
+          git diff --cached --quiet || git commit -m "eod snapshot $(date +%F)"
+          git push
