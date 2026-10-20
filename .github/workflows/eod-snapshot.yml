@@ -23,7 +23,7 @@ jobs:
           python-version: '3.12'
       - run: pip install pyyaml fastapi uvicorn pydantic
       - name: Generate EOD snapshot
-        run: python -m py.pipeline.eod_sync
+        run: python -m skapp_pkg.pipeline.eod_sync
         env:
           TZ: Asia/Shanghai
       - name: Commit snapshot
