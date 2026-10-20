@@ -18,7 +18,7 @@ def _score(text: str) -> dict:
 
 def _load_watchlist() -> dict:
     import yaml
-    cfg = yaml.safe_load(open(os.path.join(HERE, "py", "config", "symbols.yaml")))
+    cfg = yaml.safe_load(open(os.path.join(HERE, "skapp_pkg", "config", "symbols.yaml")))
     return {"watchlist": cfg.get("watchlist", []), "indices": cfg.get("indices", [])}
 
 def _prev_snapshot(date: str) -> dict | None:
