@@ -1,0 +1,8 @@
+[project]
+name = "skapp"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = ["pyyaml", "fastapi", "uvicorn", "pydantic"]
+
+[tool.setuptools.packages.find]
+include = ["py*", "api*"]
