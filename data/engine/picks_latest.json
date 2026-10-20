@@ -1,0 +1,127 @@
+{
+ "source": "composite_pool_v3 (v4 engine, full-market composite, 2026-10-15)",
+ "asof": "2026-10-15",
+ "n_scored": 5644,
+ "items": [
+  {
+   "symbol": "sh603668",
+   "rank": 1
+  },
+  {
+   "symbol": "sh688121",
+   "rank": 2
+  },
+  {
+   "symbol": "sz003036",
+   "rank": 3
+  },
+  {
+   "symbol": "sh688807",
+   "rank": 4
+  },
+  {
+   "symbol": "sh600857",
+   "rank": 5
+  },
+  {
+   "symbol": "sh600363",
+   "rank": 6
+  },
+  {
+   "symbol": "sh688048",
+   "rank": 7
+  },
+  {
+   "symbol": "sh600498",
+   "rank": 8
+  },
+  {
+   "symbol": "sz300870",
+   "rank": 9
+  },
+  {
+   "symbol": "sh603011",
+   "rank": 10
+  },
+  {
+   "symbol": "sh688433",
+   "rank": 11
+  },
+  {
+   "symbol": "sh688312",
+   "rank": 12
+  },
+  {
+   "symbol": "sz301396",
+   "rank": 13
+  },
+  {
+   "symbol": "sh600105",
+   "rank": 14
+  },
+  {
+   "symbol": "sz002989",
+   "rank": 15
+  },
+  {
+   "symbol": "sz300475",
+   "rank": 16
+  },
+  {
+   "symbol": "sz002734",
+   "rank": 17
+  },
+  {
+   "symbol": "sz301053",
+   "rank": 18
+  },
+  {
+   "symbol": "sh605376",
+   "rank": 19
+  },
+  {
+   "symbol": "sz002965",
+   "rank": 20
+  },
+  {
+   "symbol": "sz300913",
+   "rank": 21
+  },
+  {
+   "symbol": "sh603989",
+   "rank": 22
+  },
+  {
+   "symbol": "sh603256",
+   "rank": 23
+  },
+  {
+   "symbol": "sz002937",
+   "rank": 24
+  },
+  {
+   "symbol": "sz300782",
+   "rank": 25
+  },
+  {
+   "symbol": "sz300499",
+   "rank": 26
+  },
+  {
+   "symbol": "sh603031",
+   "rank": 27
+  },
+  {
+   "symbol": "sh600487",
+   "rank": 28
+  },
+  {
+   "symbol": "sh688205",
+   "rank": 29
+  },
+  {
+   "symbol": "sz301123",
+   "rank": 30
+  }
+ ]
+}
