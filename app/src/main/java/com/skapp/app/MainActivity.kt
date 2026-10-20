@@ -291,7 +291,7 @@ private fun QuotesTab(state: UiState, vm: SkappViewModel) {
         }
     }
     if (adding) {
-        AlertDialog(onConfirmRequest = { adding = false },
+        AlertDialog(onDismissRequest = { adding = false },
             title = { Text("代码格式") },
             text = { Text("支持：sh 沪 / sz 深 / hk 港 + 代码，如 sh601318、hk00700") },
             confirmButton = { TextButton(onClick = { adding = false }) { Text("知道了") } })
