@@ -1,0 +1,209 @@
+{
+ "ts": "2026-10-16 09:15",
+ "engine": "composite_pick_v2",
+ "n_scored": 2956,
+ "method": "7-factor equal-weight (low-value long), LS +17.1%/yr sharpe 0.79 full-period, net +8.6%/yr after cost at monthly rebalance",
+ "top50": [
+  {
+   "symbol": "sh603668",
+   "score": -0.3822
+  },
+  {
+   "symbol": "sh688121",
+   "score": -0.3811
+  },
+  {
+   "symbol": "sh688048",
+   "score": -0.3722
+  },
+  {
+   "symbol": "sh688807",
+   "score": -0.372
+  },
+  {
+   "symbol": "sh600363",
+   "score": -0.3715
+  },
+  {
+   "symbol": "sh600857",
+   "score": -0.3707
+  },
+  {
+   "symbol": "sh600498",
+   "score": -0.3703
+  },
+  {
+   "symbol": "sh688433",
+   "score": -0.3683
+  },
+  {
+   "symbol": "sh603011",
+   "score": -0.3679
+  },
+  {
+   "symbol": "sh600105",
+   "score": -0.3661
+  },
+  {
+   "symbol": "sh688312",
+   "score": -0.3655
+  },
+  {
+   "symbol": "sh605376",
+   "score": -0.3644
+  },
+  {
+   "symbol": "sh603256",
+   "score": -0.3624
+  },
+  {
+   "symbol": "sh603989",
+   "score": -0.3614
+  },
+  {
+   "symbol": "sh603031",
+   "score": -0.3609
+  },
+  {
+   "symbol": "sh688205",
+   "score": -0.3603
+  },
+  {
+   "symbol": "sh600487",
+   "score": -0.3601
+  },
+  {
+   "symbol": "sh688403",
+   "score": -0.3564
+  },
+  {
+   "symbol": "sh688559",
+   "score": -0.3562
+  },
+  {
+   "symbol": "sh688766",
+   "score": -0.3557
+  },
+  {
+   "symbol": "sh688195",
+   "score": -0.3549
+  },
+  {
+   "symbol": "sh603678",
+   "score": -0.3548
+  },
+  {
+   "symbol": "sh688629",
+   "score": -0.3548
+  },
+  {
+   "symbol": "sz002008",
+   "score": -0.3541
+  },
+  {
+   "symbol": "sh688585",
+   "score": -0.3535
+  },
+  {
+   "symbol": "sh600172",
+   "score": -0.3528
+  },
+  {
+   "symbol": "sh688498",
+   "score": -0.3526
+  },
+  {
+   "symbol": "sz001389",
+   "score": -0.3524
+  },
+  {
+   "symbol": "sh688110",
+   "score": -0.3523
+  },
+  {
+   "symbol": "sh603601",
+   "score": -0.3519
+  },
+  {
+   "symbol": "sh600186",
+   "score": -0.3511
+  },
+  {
+   "symbol": "sh603040",
+   "score": -0.3491
+  },
+  {
+   "symbol": "sh603738",
+   "score": -0.348
+  },
+  {
+   "symbol": "sh605111",
+   "score": -0.3474
+  },
+  {
+   "symbol": "sh688257",
+   "score": -0.347
+  },
+  {
+   "symbol": "sh688668",
+   "score": -0.3465
+  },
+  {
+   "symbol": "sh688146",
+   "score": -0.3465
+  },
+  {
+   "symbol": "sh688698",
+   "score": -0.3462
+  },
+  {
+   "symbol": "sh688383",
+   "score": -0.3461
+  },
+  {
+   "symbol": "sh688535",
+   "score": -0.346
+  },
+  {
+   "symbol": "sz001309",
+   "score": -0.3459
+  },
+  {
+   "symbol": "sh600410",
+   "score": -0.3453
+  },
+  {
+   "symbol": "sh688820",
+   "score": -0.3449
+  },
+  {
+   "symbol": "sz000510",
+   "score": -0.3448
+  },
+  {
+   "symbol": "sh600667",
+   "score": -0.3446
+  },
+  {
+   "symbol": "sz000978",
+   "score": -0.3443
+  },
+  {
+   "symbol": "sh688371",
+   "score": -0.3437
+  },
+  {
+   "symbol": "sh603052",
+   "score": -0.3427
+  },
+  {
+   "symbol": "sh688525",
+   "score": -0.3423
+  },
+  {
+   "symbol": "sh688372",
+   "score": -0.3421
+  }
+ ],
+ "note": "月频调仓池, 不构成投资建议"
+}
