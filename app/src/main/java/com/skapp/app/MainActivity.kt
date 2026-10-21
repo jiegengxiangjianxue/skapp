@@ -1,5 +1,7 @@
 package com.skapp.app
 
+@file:OptIn(ExperimentalMaterial3Api::class)
+
 import android.content.Context
 import android.os.Bundle
 import androidx.activity.ComponentActivity
