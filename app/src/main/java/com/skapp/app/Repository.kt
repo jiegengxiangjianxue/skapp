@@ -205,7 +205,7 @@ class MarketRepository(private val githubToken: () -> String) {
                         else -> 0.0
                     }
                     StrategyRank(k, score, if (v is JSONObject) v.toString().take(80) else v?.toString() ?: "")
-                }.sortedByDescending { it.score }.take(15)
+                }.sortedByDescending { it.score }.take(15).toList()
                 Res.Ok(list)
             } catch (e: Exception) { Res.Err("策略解析失败") }
         }
