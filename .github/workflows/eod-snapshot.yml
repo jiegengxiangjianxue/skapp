@@ -31,6 +31,8 @@ jobs:
           TZ: Asia/Shanghai
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Sync app-facing data to public skapp-data
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           python3 - <<'PYEOF'
           import base64, json, os, urllib.request
