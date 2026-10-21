@@ -38,10 +38,11 @@ jobs:
           import base64, json, os, urllib.request
           TOK = os.environ["GH_TOKEN"]
           API = "https://api.github.com"
+          import glob as _glob
           FILES = ["data/search/symbols.json","data/engine/picks_latest.json",
                    "data/engine/decision.json","data/engine/engine_fusion.json",
-                   "data/engine/ai_pick_v5.json","data/engine/strategy_rank.json",
-                   "data/snapshots/index.json"]
+                   "data/engine/ai_pick_v5.json","data/engine/strategy_rank.json"] \
+                  + sorted(_glob.glob("data/snapshots/*.json"))
           # search index refreshed from sina full list
           import sys; sys.path.insert(0, ".")
           try:
