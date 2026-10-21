@@ -387,8 +387,8 @@ fun PicksTab(vm: SkappViewModel) {
                                 Text(p.name.ifBlank { p.code }, style = MaterialTheme.typography.titleMedium)
                                 Text("${p.code} · ${p.section}", style = MaterialTheme.typography.bodySmall)
                             }
-                            if (!p.price.isNaN()) Text("%.2f".format(p.price),
-                                style = MaterialTheme.typography.titleMedium)
+                            p.price?.let { pv -> if (!pv.isNaN()) Text("%.2f".format(pv),
+                                style = MaterialTheme.typography.titleMedium) }
                             Spacer(Modifier.width(8.dp))
                             Text("%.1f".format(p.score), style = MaterialTheme.typography.titleMedium,
                                 color = MaterialTheme.colorScheme.primary)
