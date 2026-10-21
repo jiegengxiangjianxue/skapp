@@ -1,0 +1,48 @@
+{
+ "ts": "2026-10-16T07:36:43",
+ "E": 10.0,
+ "state": "中性观望",
+ "agreement": 0.2,
+ "raw_agreement": 1.0,
+ "missing_engines": [
+  "market_phase",
+  "cycle_v2",
+  "global",
+  "win_loop",
+  "kelly"
+ ],
+ "n_available": 1,
+ "parts": {
+  "market_phase": {
+   "score": 0,
+   "missing": true,
+   "weight": 0.3
+  },
+  "cycle_v2": {
+   "score": 0,
+   "missing": true,
+   "weight": 0.25
+  },
+  "global": {
+   "score": 0,
+   "missing": true,
+   "weight": 0.2
+  },
+  "win_loop": {
+   "score": 0,
+   "missing": true,
+   "weight": 0.12
+  },
+  "kelly": {
+   "score": 0,
+   "missing": true,
+   "weight": 0.08
+  },
+  "ic_composite": {
+   "score": 10,
+   "missing": false,
+   "weight": 0.15
+  }
+ },
+ "note": "多引擎加权融合; missing引擎不参与加权且一致性和按可用数压缩; 不构成投资建议"
+}
