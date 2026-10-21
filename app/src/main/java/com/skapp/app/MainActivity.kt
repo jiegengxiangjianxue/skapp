@@ -197,12 +197,13 @@ fun SymbolDetailSheet(symbol: String, name: String, extra: String?, onDismiss: (
             extra?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = { vm.addBySearch(SymbolEntry(symbol, name)); onDismiss() }) { Text("+ 加自选") }
+                val ctx = androidx.compose.ui.platform.LocalContext.current
                 OutlinedButton(onClick = {
-                    // 跳浏览器看K线（腾讯 gu 网页）
-                    val ctx = androidx.compose.ui.platform.LocalContext.current
                     try {
+                        val sym2 = if (symbol.startsWith("hk")) symbol.removePrefix("hk") else symbol
+                        val url = if (symbol.startsWith("hk")) "https://gu.qq.com/hk$sym2" else "https://gu.qq.com/$sym2/gp"
                         ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW,
-                            android.net.Uri.parse("https://gu.qq.com/${symbol.replace("hk", "hk").takeIf { symbol.startsWith("hk") } ?: symbol}/")))
+                            android.net.Uri.parse(url)))
                     } catch (_: Exception) {}
                 }) { Text("看K线") }
             }
