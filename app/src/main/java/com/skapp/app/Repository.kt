@@ -9,19 +9,22 @@ import org.json.JSONObject
 
 data class Quote(val symbol: String, val name: String, val price: Double, val pctChg: Double)
 data class NewsItem(val ts: String, val text: String, val sentiment: String)
-data class PickItem(val symbol: String, val name: String, val rank: Int)
-data class SymbolEntry(val symbol: String, val name: String)
-data class Decision(
-    val action: String, val positionPct: Double, val reasons: List<String>,
-    val mood: String, val score: Int,
-    val finPicks: List<FinPick>,
+data class LivePick(
+    val code: String, val name: String, val price: Double?, val score: Double,
+    val section: String, val why: List<String>, val extra: String,
 )
-data class FinPick(val symbol: String, val name: String, val score: Double, val why: String)
-data class Fusion(val e: Double, val state: String, val agreement: Double,
-                  val parts: Map<String, PartScore>)
-data class PartScore(val score: Int, val missing: Boolean, val weight: Double)
-data class ScoredPick(val symbol: String, val name: String, val score: Double)
-data class StrategyRank(val name: String, val score: Double, val extra: String)
+data class MarketPulse(
+    val ts: String, val session: String, val advance: Int, val decline: Int,
+    val limitUp: Int, val limitDown: Int, val turnoverYi: Double, val phase: String,
+    val phaseDesc: String,
+)
+data class DecisionCard(
+    val code: String, val name: String, val composite: Double,
+    val action: String, val reasons: List<String>, val dims: Map<String, Double>,
+)
+data class PositionAdvice(val label: String, val capPct: Int, val reason: String, val regime: String)
+data class AvoidItem(val code: String, val name: String, val risk: String, val reasons: List<String>)
+data class SymbolEntry(val symbol: String, val name: String)
 
 sealed interface Res<out T> {
     data class Ok<T>(val v: T) : Res<T>
@@ -43,9 +46,44 @@ private fun httpGet(url: String, headers: Map<String, String> = emptyMap(),
     }
 }
 
+/**
+ * 实时数据客户端 —— 与网站同源：
+ * 主源 raw.githubusercontent.com/qwerzxcva/stocks-ai-view（网站 pages-data-sync 同一仓，
+ * 收盘/盘中 Actions 高频刷新，ts 精确到秒）；备源 skapp-data。
+ * githubToken 仅用于 GitHub API 兜底（私仓模式/限额），不影响主链路。
+ */
 class MarketRepository(private val githubToken: () -> String) {
 
-    /** 腾讯实时行情（GBK），A股+港股 */
+    private fun firstToken(): String = githubToken().split("\n", " ", ",")
+        .map { it.trim() }.firstOrNull { it.isNotEmpty() } ?: ""
+
+    /** 依序尝试多个源，第一个成功即返回 */
+    private suspend fun liveFile(vararg paths: String): Res<String> = withContext(Dispatchers.IO) {
+        for (p in paths) {
+            try {
+                val (code, bytes) = httpGet("$p?t=" + System.currentTimeMillis())
+                if (code in 200..299 && bytes.isNotEmpty()) return@withContext Res.Ok(String(bytes))
+            } catch (_: Exception) {}
+        }
+        // token 兜底：GitHub contents API（任意有效 token，避免 raw 被墙/限流）
+        val tok = firstToken()
+        if (tok.isNotEmpty()) {
+            for (repo in LIVE_REPOS) {
+                for (p in paths) {
+                    val rel = p.substringAfter("/main/")
+                    try {
+                        val (code, bytes) = httpGet(
+                            "https://api.github.com/repos/$repo/contents/$rel?ref=main&t=" + System.currentTimeMillis(),
+                            mapOf("Authorization" to "Bearer $tok", "Accept" to "application/vnd.github.raw"))
+                        if (code in 200..299 && bytes.isNotEmpty()) return@withContext Res.Ok(String(bytes))
+                    } catch (_: Exception) {}
+                }
+            }
+        }
+        Res.Err("全部数据源加载失败（检查网络）")
+    }
+
+    /** 腾讯实时行情（GBK），A股+港股 —— 自选列表真正的实时 */
     suspend fun realtimeQuotes(symbols: List<String>): Res<List<Quote>> =
         withContext(Dispatchers.IO) {
             try {
@@ -89,156 +127,133 @@ class MarketRepository(private val githubToken: () -> String) {
         } catch (e: Exception) { Res.Err(e.message ?: "快讯加载失败") }
     }
 
-    /** 仓库数据文件：skapp-data。填了 token 就走 contents API（Bearer，可用私仓/更高限额），
-     *  未填 token 则匿名 raw 直读（公开仓，零凭据可用）。 */
-    private suspend fun repoFile(path: String): Res<String> = withContext(Dispatchers.IO) {
-        try {
-            val tok = githubToken().split("\n", " ", ",").map { it.trim() }
-                .firstOrNull { it.isNotEmpty() } ?: ""
-            if (tok.isNotEmpty()) {
-                val api = "https://api.github.com/repos/jiegengxiangjianxue/skapp-data/contents/$path?ref=main&t=" + System.currentTimeMillis()
-                val (code, bytes) = httpGet(api, mapOf(
-                    "Authorization" to "Bearer $tok",
-                    "Accept" to "application/vnd.github.raw"))
-                if (code in 200..299) return@withContext Res.Ok(String(bytes))
-                if (code == 401 || code == 403) {
-                    // token 无效 -> 回退匿名 raw，同时把错误带给上层提示
-                    val fb = rawFallback(path)
-                    return@withContext if (fb != null) Res.Ok(fb)
-                        else Res.Err("凭据无效($code)，已尝试匿名读取失败：$path")
-                }
-                if (code == 404) return@withContext Res.Err("数据缺失(404)：$path")
-            }
-            val fb = rawFallback(path) ?: return@withContext Res.Err("网络加载失败：$path")
-            Res.Ok(fb)
-        } catch (e: Exception) { Res.Err(e.message ?: "加载失败") }
+    /** 大盘脉搏：涨跌家数/涨停/成交额/阶段（网站实时同源） */
+    suspend fun marketPulse(): Res<MarketPulse> {
+        return when (val raw = liveFile(
+            "$RAW_A/data/today_picks.json", "$RAW_B/data/today_picks.json")) {
+            is Res.Err -> raw
+            is Res.Ok -> try {
+                val d = JSONObject(raw.v)
+                val m = d.getJSONObject("market")
+                Res.Ok(MarketPulse(
+                    ts = d.optString("ts", ""), session = d.optString("session", ""),
+                    advance = m.optInt("advance", 0), decline = m.optInt("decline", 0),
+                    limitUp = m.optInt("limit_up", 0), limitDown = m.optInt("limit_down", 0),
+                    turnoverYi = m.optDouble("turnover_yi", 0.0),
+                    phase = m.optString("phase", ""), phaseDesc = m.optString("phase_desc", ""),
+                ))
+            } catch (e: Exception) { Res.Err("市场脉搏解析失败") }
+        }
     }
 
-    private fun rawFallback(path: String): String? = try {
-        val url = "https://raw.githubusercontent.com/jiegengxiangjianxue/skapp-data/main/$path?t=" + System.currentTimeMillis()
-        val (code, bytes) = httpGet(url)
-        if (code in 200..299) String(bytes) else null
-    } catch (e: Exception) { null }
+    /** 今日实时推股（signals 多引擎共振 + values 价值池 + limit_up 涨停预测） */
+    suspend fun todayPicks(): Res<List<LivePick>> {
+        return when (val raw = liveFile(
+            "$RAW_A/data/today_picks.json", "$RAW_B/data/today_picks.json")) {
+            is Res.Err -> raw
+            is Res.Ok -> try {
+                val d = JSONObject(raw.v)
+                val p = d.getJSONObject("picks")
+                val out = mutableListOf<LivePick>()
+                p.optJSONArray("signals")?.let { a ->
+                    (0 until a.length()).map { i -> a.optJSONObject(i) }.filterNotNull().forEach { o ->
+                        val why = o.optJSONArray("why")?.let { w ->
+                            (0 until w.length()).map { w.optString(it) } } ?: emptyList()
+                        out.add(LivePick(o.optString("code"), o.optString("name", ""),
+                            o.optDouble("price", Double.NaN), o.optDouble("score", 0.0),
+                            "多引擎共振", why,
+                            "共振 ${(o.optDouble("resonance", 0.0) * 100).toInt()}% · 多${o.optInt("bull", 0)}/空${o.optInt("bear", 0)} · 上涨概率 ${o.optDouble("p_up", 0.0)}%"))
+                    }
+                }
+                p.optJSONArray("values")?.let { a ->
+                    (0 until a.length()).map { i -> a.optJSONObject(i) }.filterNotNull().forEach { o ->
+                        out.add(LivePick(o.optString("code"), o.optString("name", ""),
+                            o.optDouble("price", Double.NaN), o.optDouble("score", 0.0) * 100,
+                            "价值池",
+                            listOf("240日分位 ${(o.optDouble("pos240_pct", 0.0)).toInt()}% · 量比 ${o.optDouble("vratio", 0.0)}"),
+                            "当日涨跌 ${o.optDouble("ret_pct", 0.0)}%"))
+                    }
+                }
+                Res.Ok(out)
+            } catch (e: Exception) { Res.Err("推股解析失败") }
+        }
+    }
 
-    /** 全市场名称搜索索引 */
+    /** 十维决策卡（网站「个股决策卡」同源） */
+    suspend fun decisionCards(): Res<Pair<PositionAdvice, List<DecisionCard>>> {
+        return when (val raw = liveFile(
+            "$RAW_A/data/decision.json", "$RAW_B/data/decision.json")) {
+            is Res.Err -> raw
+            is Res.Ok -> try {
+                val d = JSONObject(raw.v)
+                val pa = d.getJSONObject("position_advice")
+                val advice = PositionAdvice(
+                    pa.optString("label", ""), (pa.optDouble("cap", 0.0) * 100).toInt(),
+                    pa.optString("reason", ""), d.optString("market_regime", "?"))
+                val cards = d.optJSONArray("cards")?.let { a ->
+                    (0 until a.length()).map { i -> a.optJSONObject(i) }.filterNotNull().map { o ->
+                        val dims = o.optJSONObject("dims")?.let { dd ->
+                            dd.keys().asSequence().map { k -> k to dd.optDouble(k, 0.0) }.toMap()
+                        } ?: emptyMap()
+                        DecisionCard(o.optString("code"), o.optString("name", ""),
+                            o.optDouble("composite", 0.0), o.optString("action", ""),
+                            o.optJSONArray("reasons")?.let { r ->
+                                (0 until r.length()).map { r.optString(it) } } ?: emptyList(),
+                            dims)
+                    }
+                } ?: emptyList()
+                Res.Ok(advice to cards)
+            } catch (e: Exception) { Res.Err("决策解析失败") }
+        }
+    }
+
+    /** 回避名单 */
+    suspend fun avoidList(): Res<List<AvoidItem>> {
+        return when (val raw = liveFile(
+            "$RAW_A/data/decision.json", "$RAW_B/data/decision.json")) {
+            is Res.Err -> raw
+            is Res.Ok -> try {
+                val d = JSONObject(raw.v)
+                Res.Ok(d.optJSONArray("avoid")?.let { a ->
+                    (0 until a.length()).map { i -> a.optJSONObject(i) }.filterNotNull().map { o ->
+                        AvoidItem(o.optString("code"), o.optString("name", ""),
+                            o.optString("risk", ""),
+                            o.optJSONArray("reasons")?.let { r ->
+                                (0 until r.length()).map { r.optString(it) } } ?: emptyList())
+                    }
+                } ?: emptyList())
+            } catch (e: Exception) { Res.Err("回避名单解析失败") }
+        }
+    }
+
+    /** 搜索索引：网站同源 stock_names（5278条，秒级刷新）+ 本地 skapp-data 兜底 */
     private var searchCache: List<SymbolEntry>? = null
     suspend fun searchIndex(): Res<List<SymbolEntry>> {
         searchCache?.let { return Res.Ok(it) }
-        val raw = repoFile("data/search/symbols.json")
+        val raw = liveFile("$RAW_A/data/stock_names.json", "$RAW_B/data/stock_names.json",
+            "$RAW_B2/data/search/symbols.json")
         return when (raw) {
             is Res.Err -> raw
             is Res.Ok -> try {
-                val arr = JSONArray(raw.v)
-                val list = (0 until arr.length()).map { i ->
-                    val o = arr.getJSONObject(i)
-                    SymbolEntry(o.getString("s"), o.getString("n"))
-                }
+                val d = JSONObject(raw.v)
+                val list = d.keys().asSequence().map { code ->
+                    val v = d.opt(code)
+                    if (v is JSONObject) SymbolEntry(code, v.optString("n"))
+                    else SymbolEntry(code, v.toString())
+                }.toList()
                 searchCache = list
                 Res.Ok(list)
             } catch (e: Exception) { Res.Err("搜索索引解析失败") }
         }
     }
 
-    suspend fun picks(): Res<List<PickItem>> {
-        return when (val raw = repoFile("data/engine/picks_latest.json")) {
-            is Res.Err -> raw
-            is Res.Ok -> try {
-                val d = JSONObject(raw.v)
-                val arr = d.getJSONArray("items")
-                Res.Ok((0 until arr.length()).take(30).map { i ->
-                    val o = arr.getJSONObject(i)
-                    PickItem(o.optString("symbol", "?"), o.optString("name", ""), o.optInt("rank", i + 1))
-                })
-            } catch (e: Exception) { Res.Err("推股解析失败") }
-        }
-    }
-
-    /** 决策：仓位建议+理由+财务选股（网站「今日决策」同源） */
-    suspend fun decision(): Res<Decision> {
-        return when (val raw = repoFile("data/engine/decision.json")) {
-            is Res.Err -> raw
-            is Res.Ok -> try {
-                val d = JSONObject(raw.v)
-                val dec = d.getJSONObject("decision")
-                val g = dec.optJSONObject("global")
-                val reasons = d.getJSONArray("reasons").let { a ->
-                    (0 until a.length()).map { a.optString(it) } }
-                val fin = d.optJSONArray("fin_screen_picks")?.let { a ->
-                    (0 until a.length()).take(10).map { i ->
-                        val o = a.getJSONObject(i)
-                        FinPick(o.optString("symbol", "?"), o.optString("name", ""),
-                            o.optDouble("score", 0.0), o.optString("why", ""))
-                    }
-                } ?: emptyList()
-                Res.Ok(Decision(
-                    action = dec.optString("action", "?"),
-                    positionPct = dec.optDouble("position_pct", 0.0),
-                    reasons = reasons,
-                    mood = g?.optString("mood", "?") ?: "?",
-                    score = g?.optInt("score", 0) ?: 0,
-                    finPicks = fin,
-                ))
-            } catch (e: Exception) { Res.Err("决策解析失败") }
-        }
-    }
-
-    /** 引擎融合状态 */
-    suspend fun fusion(): Res<Fusion> {
-        return when (val raw = repoFile("data/engine/engine_fusion.json")) {
-            is Res.Err -> raw
-            is Res.Ok -> try {
-                val d = JSONObject(raw.v)
-                val partsRaw = d.optJSONObject("parts")
-                val parts = mutableMapOf<String, PartScore>()
-                partsRaw?.let { p ->
-                    p.keys().forEach { k ->
-                        val o = p.getJSONObject(k)
-                        parts[k] = PartScore(o.optInt("score", 0),
-                            o.optBoolean("missing", false), o.optDouble("weight", 0.0))
-                    }
-                }
-                Res.Ok(Fusion(d.optDouble("E", 0.0), d.optString("state", "?"),
-                    d.optDouble("agreement", 0.0), parts))
-            } catch (e: Exception) { Res.Err("引擎状态解析失败") }
-        }
-    }
-
-    /** AI 选股 top50（v4 全市场复合分数） */
-    suspend fun aiPicks(): Res<List<ScoredPick>> {
-        return when (val raw = repoFile("data/engine/ai_pick_v5.json")) {
-            is Res.Err -> raw
-            is Res.Ok -> try {
-                val d = JSONObject(raw.v)
-                val arr = d.getJSONArray("top50")
-                Res.Ok((0 until arr.length()).map { i ->
-                    val o = arr.getJSONObject(i)
-                    ScoredPick(o.getString("symbol"), o.optString("name", ""), o.optDouble("score", 0.0))
-                })
-            } catch (e: Exception) { Res.Err("选股解析失败") }
-        }
-    }
-
-    /** 策略排名：ranking 是数组 [{algo, win_rate, avg_ret_t1_close, ...}] */
-    suspend fun strategyRank(): Res<List<StrategyRank>> {
-        return when (val raw = repoFile("data/engine/strategy_rank.json")) {
-            is Res.Err -> raw
-            is Res.Ok -> try {
-                val d = JSONObject(raw.v)
-                val arr = d.optJSONArray("ranking") ?: return@strategyRank Res.Err("策略数据为空")
-                val list = (0 until arr.length()).mapNotNull { i ->
-                    val o = arr.optJSONObject(i) ?: return@mapNotNull null
-                    val wr = o.optDouble("win_rate", Double.NaN)
-                    val ret = o.optDouble("avg_ret_t1_close", Double.NaN)
-                    val score = if (wr.isNaN()) -999.0 else wr
-                    val extra = buildString {
-                        if (!wr.isNaN()) append("胜率 ${(wr * 100).toInt()}%")
-                        if (!ret.isNaN()) append(if (isEmpty()) "" else " · ").append("T1均收 %+.2f%%".format(ret * 100))
-                        append(" · n=").append(o.optInt("n", 0))
-                    }
-                    StrategyRank(o.optString("algo", "?"), score, extra)
-                }.sortedByDescending { it.score }
-                Res.Ok(list)
-            } catch (e: Exception) { Res.Err("策略解析失败") }
-        }
+    companion object {
+        // 网站同源双仓（qwerzxcva 主、dufuwuxin 备），与 gh_sources.js 相同的降级策略
+        const val RAW_A = "https://raw.githubusercontent.com/qwerzxcva/stocks-ai-view/main/data"
+        const val RAW_B = "https://raw.githubusercontent.com/dufuwuxin/stocks-ai-view-c/main/data"
+        const val RAW_B2 = "https://raw.githubusercontent.com/jiegengxiangjianxue/skapp-data/main/data"
+        val LIVE_REPOS = arrayOf(
+            "qwerzxcva/stocks-ai-view", "dufuwuxin/stocks-ai-view-c",
+            "jiegengxiangjianxue/skapp-data")
     }
 }
