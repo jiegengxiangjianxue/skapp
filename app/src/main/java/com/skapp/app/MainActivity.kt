@@ -7,6 +7,9 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -54,10 +57,9 @@ class SkappViewModel(private val repo: MarketRepository) : ViewModel() {
     val watchlist: StateFlow<List<String>> = _watchlist.asStateFlow()
 
     fun refreshQuotes() {
-        quotes.value = Res.Err("加载中")
         viewModelScope.launch {
+            quotes.value = Res.Err("加载中")
             val r = repo.realtimeQuotes(_watchlist.value)
-            // 与本地名称表合并显示中文名
             val names = (searchIndex.value as? Res.Ok)?.v?.associate { it.symbol to it.name } ?: emptyMap()
             quotes.value = when (r) {
                 is Res.Ok -> Res.Ok(r.v.map { q -> q.copy(name = names[q.symbol] ?: q.name) })
@@ -72,6 +74,9 @@ class SkappViewModel(private val repo: MarketRepository) : ViewModel() {
         viewModelScope.launch { fusion.value = repo.fusion() }
         viewModelScope.launch { aiPicks.value = repo.aiPicks() }
         viewModelScope.launch { strategies.value = repo.strategyRank() }
+    }
+    fun refreshAll() {
+        refreshQuotes(); refreshNews(); refreshPicks(); refreshAnalysis(); ensureSearch()
     }
     fun ensureSearch() {
         if ((searchIndex.value as? Res.Err)?.message == "加载中") viewModelScope.launch {
@@ -106,8 +111,10 @@ class MainActivity : ComponentActivity() {
                 val vm: SkappViewModel = viewModel(
                     factory = SkappViewModel.Factory(MarketRepository { token }))
                 AppRoot(vm, token) { t ->
+                    val changed = t != token
                     token = t
                     prefs.edit().putString("gh_token", t).apply()
+                    if (changed) vm.refreshAll()
                 }
             }
         }
@@ -117,9 +124,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun AppRoot(vm: SkappViewModel, token: String, onToken: (String) -> Unit) {
     var tab by remember { mutableIntStateOf(0) }
-    LaunchedEffect(Unit) {
-        vm.refreshQuotes(); vm.refreshNews(); vm.refreshAnalysis(); vm.ensureSearch()
-    }
+    LaunchedEffect(Unit) { vm.refreshAll() }
     Scaffold(
         bottomBar = {
             NavigationBar {
@@ -166,6 +171,74 @@ fun <T> ResView(res: Res<T>, retry: () -> Unit, content: @Composable (T) -> Unit
     }
 }
 
+// ---------- 个股详情弹窗 ----------
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SymbolDetailSheet(symbol: String, name: String, extra: String?, onDismiss: () -> Unit, vm: SkappViewModel) {
+    var q by remember { mutableStateOf<Res<Quote>>(Res.Err("加载中")) }
+    LaunchedEffect(symbol) {
+        val r = repo_quote(vm, symbol)
+        q = r
+    }
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(name.ifBlank { symbol }, style = MaterialTheme.typography.headlineSmall)
+            Text(symbol, style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            when (val r = q) {
+                is Res.Err -> Text("行情：${r.message}", style = MaterialTheme.typography.bodySmall)
+                is Res.Ok -> Row(verticalAlignment = Alignment.Bottom) {
+                    Text("%.2f".format(r.v.price), style = MaterialTheme.typography.headlineMedium)
+                    Spacer(Modifier.width(10.dp))
+                    Text("%+.2f%%".format(r.v.pctChg), style = MaterialTheme.typography.titleMedium,
+                        color = if (r.v.pctChg >= 0) UpColor else DownColor)
+                }
+            }
+            extra?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = { vm.addBySearch(SymbolEntry(symbol, name)); onDismiss() }) { Text("+ 加自选") }
+                OutlinedButton(onClick = {
+                    // 跳浏览器看K线（腾讯 gu 网页）
+                    val ctx = androidx.compose.ui.platform.LocalContext.current
+                    try {
+                        ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW,
+                            android.net.Uri.parse("https://gu.qq.com/${symbol.replace("hk", "hk").takeIf { symbol.startsWith("hk") } ?: symbol}/")))
+                    } catch (_: Exception) {}
+                }) { Text("看K线") }
+            }
+            Spacer(Modifier.height(12.dp))
+        }
+    }
+}
+
+private suspend fun repo_quote(vm: SkappViewModel, symbol: String): Res<Quote> {
+    // 单票实时行情
+    return try {
+        val r = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val url = "https://qt.gtimg.cn/q=$symbol"
+            val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+            conn.connectTimeout = 10000; conn.readTimeout = 10000
+            val text = String(conn.inputStream.readBytes(), charset("GBK"))
+            conn.disconnect()
+            for (line in text.split(";")) {
+                val l = line.trim()
+                if (!l.contains("=")) continue
+                val sym = l.substringBefore("=").removePrefix("v_")
+                if (sym != symbol) continue
+                val f = l.substringAfter("=").removeSurrounding("\"").split("~")
+                if (f.size < 6) continue
+                val price = f.getOrNull(3)?.toDoubleOrNull() ?: 0.0
+                val prev = f.getOrNull(4)?.toDoubleOrNull() ?: 0.0
+                val pct = f.getOrNull(32)?.toDoubleOrNull()
+                    ?: if (prev > 0) (price - prev) / prev * 100 else 0.0
+                return@withContext Quote(sym, f[1], price, pct)
+            }
+            throw Exception("无数据")
+        }
+        Res.Ok(r)
+    } catch (e: Exception) { Res.Err(e.message ?: "加载失败") }
+}
+
 // ---------- Tab 行情 ----------
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -173,19 +246,17 @@ fun QuotesTab(vm: SkappViewModel) {
     val quotes by vm.quotes.collectAsState()
     val idx by vm.searchIndex.collectAsState()
     var query by remember { mutableStateOf("") }
-    var showSearch by remember { mutableStateOf(false) }
 
     Column(Modifier.fillMaxSize()) {
-        // 搜索框：支持中文名/代码（本地 5575 只索引，无需网络）
         OutlinedTextField(
             value = query, onValueChange = {
-                query = it; showSearch = it.isNotBlank(); vm.ensureSearch()
+                query = it; vm.ensureSearch()
             },
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
             placeholder = { Text("搜股票名字或代码，如：中天科技 / 600522") },
             singleLine = true,
         )
-        if (showSearch) {
+        if (query.isNotBlank()) {
             val results = when (val s = idx) {
                 is Res.Ok -> s.v.filter {
                     it.name.contains(query, true) || it.symbol.contains(query.lowercase())
@@ -193,16 +264,13 @@ fun QuotesTab(vm: SkappViewModel) {
                 is Res.Err -> emptyList()
             }
             val idxLoading = (idx as? Res.Err)?.message == "加载中"
-            if (idxLoading) {
-                LinearProgressIndicator(Modifier.fillMaxWidth().padding(horizontal = 16.dp))
-            }
+            if (idxLoading) LinearProgressIndicator(Modifier.fillMaxWidth().padding(horizontal = 16.dp))
             LazyColumn(Modifier.heightIn(max = 280.dp)) {
                 items(results, key = { it.symbol }) { e ->
                     ListItem(headlineContent = { Text(e.name) },
                         supportingContent = { Text(e.symbol) },
                         trailingContent = {
-                            TextButton(onClick = { vm.addBySearch(e); query = ""; showSearch = false }) {
-                                Text("+自选") }
+                            TextButton(onClick = { vm.addBySearch(e); query = "" }) { Text("+自选") }
                         })
                 }
             }
@@ -212,7 +280,8 @@ fun QuotesTab(vm: SkappViewModel) {
             LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(list, key = { it.symbol }) { q ->
-                    ElevatedCard(Modifier.fillMaxWidth()) {
+                    var showDetail by remember { mutableStateOf(false) }
+                    ElevatedCard(onClick = { showDetail = true }, Modifier.fillMaxWidth()) {
                         Row(Modifier.padding(16.dp).heightIn(min = 48.dp),
                             verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
@@ -230,6 +299,7 @@ fun QuotesTab(vm: SkappViewModel) {
                             ) { Text("✕") }
                         }
                     }
+                    if (showDetail) SymbolDetailSheet(q.symbol, q.name, null, { showDetail = false }, vm)
                 }
             }
         }
@@ -250,27 +320,36 @@ fun PicksTab(vm: SkappViewModel) {
         if (sub == 0) ResView(picks, { vm.refreshPicks() }) { list ->
             LazyColumn(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(list, key = { it.symbol + it.rank }) { p ->
-                    ElevatedCard(Modifier.fillMaxWidth()) {
+                    var showDetail by remember { mutableStateOf(false) }
+                    ElevatedCard(onClick = { showDetail = true }, Modifier.fillMaxWidth()) {
                         Row(Modifier.padding(16.dp).heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
                             Text("#${p.rank}", style = MaterialTheme.typography.titleMedium,
                                 color = MaterialTheme.colorScheme.primary, modifier = Modifier.width(52.dp))
-                            Text(p.symbol, style = MaterialTheme.typography.titleMedium)
+                            Column(Modifier.weight(1f)) {
+                                Text(p.name.ifBlank { p.symbol }, style = MaterialTheme.typography.titleMedium)
+                                if (p.name.isNotBlank()) Text(p.symbol, style = MaterialTheme.typography.bodySmall)
+                            }
                         }
                     }
+                    if (showDetail) SymbolDetailSheet(p.symbol, p.name, "引擎推股 #${p.rank}（composite_pool_v3）", { showDetail = false }, vm)
                 }
             }
         }
         else ResView(ai, { vm.refreshAnalysis() }) { list ->
             LazyColumn(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(list, key = { it.symbol }) { p ->
-                    ElevatedCard(Modifier.fillMaxWidth()) {
+                    var showDetail by remember { mutableStateOf(false) }
+                    ElevatedCard(onClick = { showDetail = true }, Modifier.fillMaxWidth()) {
                         Row(Modifier.padding(16.dp).heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Text(p.symbol, Modifier.weight(1f),
-                                style = MaterialTheme.typography.titleMedium)
+                            Column(Modifier.weight(1f)) {
+                                Text(p.name.ifBlank { p.symbol }, style = MaterialTheme.typography.titleMedium)
+                                if (p.name.isNotBlank()) Text(p.symbol, style = MaterialTheme.typography.bodySmall)
+                            }
                             Text("%.3f".format(p.score), style = MaterialTheme.typography.titleMedium,
                                 color = MaterialTheme.colorScheme.primary)
                         }
                     }
+                    if (showDetail) SymbolDetailSheet(p.symbol, p.name, "AI选股复合分 %.3f（v4 全市场）".format(p.score), { showDetail = false }, vm)
                 }
             }
         }
@@ -294,6 +373,27 @@ fun AnalysisTab(vm: SkappViewModel) {
                         Text("建议仓位：${(d.positionPct * 100).toInt()}%   市场情绪：${d.mood}(${d.score})",
                             style = MaterialTheme.typography.bodyMedium)
                         d.reasons.forEach { Text("· $it", style = MaterialTheme.typography.bodySmall) }
+                    }
+                }
+            }
+        }
+        item {
+            ResView(dec, { vm.refreshAnalysis() }) { d ->
+                if (d.finPicks.isNotEmpty()) ElevatedCard(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("财务选股 Top${d.finPicks.size}", style = MaterialTheme.typography.titleMedium)
+                        d.finPicks.forEach { f ->
+                            Column(Modifier.fillMaxWidth()) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(f.name.ifBlank { f.symbol }, Modifier.weight(1f),
+                                        style = MaterialTheme.typography.bodyMedium)
+                                    Text("%.1f".format(f.score), style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.primary)
+                                }
+                                if (f.why.isNotBlank()) Text(f.why, style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
                     }
                 }
             }
@@ -323,12 +423,12 @@ fun AnalysisTab(vm: SkappViewModel) {
             ResView(strat, { vm.refreshAnalysis() }) { list ->
                 ElevatedCard(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("策略排名 Top${list.size}", style = MaterialTheme.typography.titleMedium)
+                        Text("策略排名", style = MaterialTheme.typography.titleMedium)
                         list.forEach { s ->
                             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                                 Text(s.name, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-                                Text("%.2f".format(s.score), style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.primary)
+                                Text(s.extra, style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                     }
@@ -366,25 +466,36 @@ fun NewsTab(vm: SkappViewModel) {
     }
 }
 
-// ---------- Tab 我的 ----------
+// ---------- Tab 我的：凭据接口（可填多个，任一账号有读取权限即可） ----------
 @Composable
 fun SettingsTab(token: String, onToken: (String) -> Unit, vm: SkappViewModel) {
     var draft by remember { mutableStateOf(token) }
-    Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("数据源", style = MaterialTheme.typography.titleMedium)
-        Text("推股 / 分析 / 策略数据来自公开数据仓 skapp-data（无需任何凭据，自动读取最新）。",
+    Column(Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("GitHub 凭据（可选，支持多个）", style = MaterialTheme.typography.titleMedium)
+        Text(
+            "可不填：推股/分析/策略走公开数据仓，匿名即可。\n" +
+            "填写后走 GitHub API 读取（更稳、限额更高）。一行一个 token，\n" +
+            "支持多个账号（jiegengxiangjianxue / jiegengxiangjianxue1 / dufuwuxin 等），\n" +
+            "任一有效即自动使用；全部无效自动回退匿名读取。",
             style = MaterialTheme.typography.bodySmall)
+        OutlinedTextField(
+            value = draft, onValueChange = { draft = it },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("每行一个 ghp_… / github_pat_…") },
+            minLines = 3,
+        )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = {
-                vm.refreshQuotes(); vm.refreshPicks(); vm.refreshAnalysis(); vm.refreshNews()
-            }) { Text("全部刷新") }
+            Button(onClick = { onToken(draft) }) { Text("保存") }
+            OutlinedButton(onClick = { draft = ""; onToken("") }) { Text("清除") }
+            Button(onClick = { vm.refreshAll() }) { Text("全部刷新") }
         }
         HorizontalDivider()
         Text("数据链路", style = MaterialTheme.typography.titleMedium)
         Text(
             "· 行情：腾讯 qt（A股+港股实时）\n" +
             "· 快讯：新浪 7x24（利好/利空规则同后端）\n" +
-            "· 推股/决策/融合/策略：公开数据仓 skapp-data（网站同源产物）\n" +
+            "· 推股/决策/融合/策略：skapp-data 仓（网站同源产物）\n" +
             "· 收盘后 Actions 自动更新引擎数据与快照",
             style = MaterialTheme.typography.bodySmall)
         Text("推股与分析为引擎历史产物，仅供观察，不构成投资建议。",
