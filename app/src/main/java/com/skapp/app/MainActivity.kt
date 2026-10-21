@@ -371,24 +371,20 @@ fun NewsTab(vm: SkappViewModel) {
 fun SettingsTab(token: String, onToken: (String) -> Unit, vm: SkappViewModel) {
     var draft by remember { mutableStateOf(token) }
     Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("GitHub Token", style = MaterialTheme.typography.titleMedium)
-        Text("推股 / 分析 / 策略数据来自 skapp 仓（需读取权限）。行情与快讯无需 token。",
+        Text("数据源", style = MaterialTheme.typography.titleMedium)
+        Text("推股 / 分析 / 策略数据来自公开数据仓 skapp-data（无需任何凭据，自动读取最新）。",
             style = MaterialTheme.typography.bodySmall)
-        OutlinedTextField(value = draft, onValueChange = { draft = it },
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text("ghp_... 或 github_pat_...") }, singleLine = true)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = {
-                onToken(draft)
-                vm.refreshPicks(); vm.refreshAnalysis()
-            }) { Text("保存并刷新") }
+                vm.refreshQuotes(); vm.refreshPicks(); vm.refreshAnalysis(); vm.refreshNews()
+            }) { Text("全部刷新") }
         }
         HorizontalDivider()
         Text("数据链路", style = MaterialTheme.typography.titleMedium)
         Text(
             "· 行情：腾讯 qt（A股+港股实时）\n" +
             "· 快讯：新浪 7x24（利好/利空规则同后端）\n" +
-            "· 推股/决策/融合/策略：skapp 仓 data/engine/（网站同源产物）\n" +
+            "· 推股/决策/融合/策略：公开数据仓 skapp-data（网站同源产物）\n" +
             "· 收盘后 Actions 自动更新引擎数据与快照",
             style = MaterialTheme.typography.bodySmall)
         Text("推股与分析为引擎历史产物，仅供观察，不构成投资建议。",
