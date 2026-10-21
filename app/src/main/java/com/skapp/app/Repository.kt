@@ -86,16 +86,12 @@ class MarketRepository(private val githubToken: () -> String) {
         } catch (e: Exception) { Res.Err(e.message ?: "快讯加载失败") }
     }
 
-    /** 仓库数据文件 */
+    /** 仓库数据文件：公开数据仓 skapp-data（raw 直读，无需任何凭据，带缓存穿透） */
     private suspend fun repoFile(path: String): Res<String> = withContext(Dispatchers.IO) {
         try {
-            val tok = githubToken().trim()
-            if (tok.isEmpty()) return@withContext Res.Err("未配置 GitHub Token（「我的」页填写）")
-            val url = "https://api.github.com/repos/jiegengxiangjianxue/skapp/contents/$path"
-            val (code, bytes) = httpGet(url, mapOf(
-                "Authorization" to "Bearer $tok",
-                "Accept" to "application/vnd.github.raw"))
-            if (code !in 200..299) return@withContext Res.Err("GitHub $code：$path")
+            val url = "https://raw.githubusercontent.com/jiegengxiangjianxue/skapp-data/main/$path?t=" + System.currentTimeMillis()
+            val (code, bytes) = httpGet(url)
+            if (code !in 200..299) return@withContext Res.Err("数据仓 $code：$path")
             Res.Ok(String(bytes))
         } catch (e: Exception) { Res.Err(e.message ?: "加载失败") }
     }
