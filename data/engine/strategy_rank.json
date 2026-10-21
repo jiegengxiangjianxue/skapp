@@ -1,0 +1,33 @@
+{
+ "ts": "2026-10-16T08:06:33",
+ "ranking": [
+  {
+   "algo": "limitup",
+   "n": 423,
+   "avg_ret_t1_close": -0.0079,
+   "avg_ret_t1_open": 0.00214,
+   "win_rate": 0.2943
+  },
+  {
+   "algo": "lowpos_pool",
+   "n": 60,
+   "avg_ret_t1_close": -0.01251,
+   "avg_ret_t1_open": -0.01279,
+   "win_rate": 0.2708
+  },
+  {
+   "algo": "ai_pick",
+   "n": 75,
+   "avg_ret_t1_close": -0.01415,
+   "avg_ret_t1_open": -0.00817,
+   "win_rate": 0.2667
+  },
+  {
+   "algo": "rev_pick",
+   "n": 295,
+   "avg_ret_t1_close": null,
+   "avg_ret_t1_open": null,
+   "win_rate": null
+  }
+ ]
+}
