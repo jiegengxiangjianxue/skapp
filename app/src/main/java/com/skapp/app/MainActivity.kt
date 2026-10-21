@@ -1,6 +1,6 @@
-package com.skapp.app
-
 @file:OptIn(ExperimentalMaterial3Api::class)
+
+package com.skapp.app
 
 import android.content.Context
 import android.os.Bundle
@@ -74,7 +74,7 @@ class SkappViewModel(private val repo: MarketRepository) : ViewModel() {
         viewModelScope.launch { strategies.value = repo.strategyRank() }
     }
     fun ensureSearch() {
-        if (searchIndex.value is Res.Err("加载中")) viewModelScope.launch {
+        if ((searchIndex.value as? Res.Err)?.message == "加载中") viewModelScope.launch {
             searchIndex.value = repo.searchIndex()
         }
     }
