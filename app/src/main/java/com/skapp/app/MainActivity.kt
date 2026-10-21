@@ -21,253 +21,194 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import java.net.HttpURLConnection
-import java.net.URL
-import org.json.JSONObject
 
-// ============================================================
-// 数据层：与网站同链路，无需自建服务器
-//  - 实时行情：腾讯 qt.gtimg.cn 直连（A股+港股，国内手机可用）
-//  - 快讯：新浪 7x24 直连
-//  - 推股：GitHub 仓库 contents API（token 在「我的」页配置）
-// ============================================================
+private val UpColor = Color(0xFFD32F2F)
+private val DownColor = Color(0xFF2E7D32)
 
-data class Quote(val symbol: String, val name: String, val price: Double, val pctChg: Double)
-data class NewsItem(val ts: String, val text: String, val sentiment: String)
-data class PickItem(val symbol: String, val rank: Int, val source: String)
-
-sealed interface UiState {
-    data object Loading : UiState
-    data class Ready(val quotes: List<Quote> = emptyList(),
-                     val news: List<NewsItem> = emptyList(),
-                     val picks: List<PickItem> = emptyList()) : UiState
-    data class Error(val message: String) : UiState
+@Composable
+fun SkappTheme(content: @Composable () -> Unit) {
+    MaterialTheme(
+        colorScheme = if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme(),
+        content = content)
 }
 
-private fun httpGet(url: String, headers: Map<String, String> = emptyMap(),
-                    timeoutMs: Int = 10000): Pair<Int, ByteArray> {
-    val conn = URL(url).openConnection() as HttpURLConnection
-    conn.connectTimeout = timeoutMs
-    conn.readTimeout = timeoutMs
-    headers.forEach { (k, v) -> conn.setRequestProperty(k, v) }
-    return try {
-        val code = conn.responseCode
-        val stream = if (code in 200..299) conn.inputStream else conn.errorStream
-        Pair(code, stream?.readBytes() ?: ByteArray(0))
-    } finally {
-        conn.disconnect()
-    }
-}
-
-class MarketRepository(private val githubToken: () -> String) {
-
-    /** 腾讯实时行情（GBK），A股+港股同接口 */
-    suspend fun realtimeQuotes(symbols: List<String>): Result<List<Quote>> =
-        withContext(Dispatchers.IO) {
-            runCatching {
-                if (symbols.isEmpty()) return@runCatching emptyList()
-                val url = "https://qt.gtimg.cn/q=" + symbols.joinToString(",")
-                val text = String(httpGet(url).second, charset("GBK"))
-                val out = mutableListOf<Quote>()
-                for (line in text.split(";")) {
-                    val l = line.trim()
-                    if (!l.contains("=")) continue
-                    val sym = l.substringBefore("=").removePrefix("v_")
-                    val f = l.substringAfter("=").removeSurrounding("\"").split("~")
-                    if (f.size < 6) continue
-                    val price = f.getOrNull(3)?.toDoubleOrNull() ?: 0.0
-                    val prev = f.getOrNull(4)?.toDoubleOrNull() ?: 0.0
-                    val pct = f.getOrNull(32)?.toDoubleOrNull()
-                        ?: if (prev > 0) (price - prev) / prev * 100 else 0.0
-                    out.add(Quote(sym, f[1], price, pct))
-                }
-                out
-            }
-        }
-
-    /** 新浪 7x24 快讯 + 情感标注（与 eod_sync 同规则） */
-    suspend fun news(num: Int = 30): Result<List<NewsItem>> = withContext(Dispatchers.IO) {
-        runCatching {
-            val url = "https://zhibo.sina.com.cn/api/zhibo/feed?page=1&page_size=$num&zhibo_id=152&tag_id=0"
-            val d = JSONObject(String(httpGet(url).second))
-            val list = d.getJSONObject("result").getJSONObject("data")
-                .getJSONObject("feed").getJSONArray("list")
-            val pos = listOf("利好", "上涨", "增持", "回购", "中标", "增长", "超预期", "分红")
-            val neg = listOf("利空", "下跌", "减持", "处罚", "亏损", "警示", "立案", "退市")
-            (0 until minOf(num, list.length())).map { i ->
-                val it = list.getJSONObject(i)
-                val txt = it.optString("rich_text", "")
-                val p = pos.count { w -> txt.contains(w) }
-                val n = neg.count { w -> txt.contains(w) }
-                NewsItem(it.optString("create_time", ""), txt,
-                    if (p > n) "利好" else if (n > p) "利空" else "中性")
-            }
-        }
-    }
-
-    /** 仓库数据文件（推股），contents API + token */
-    suspend fun picks(): Result<List<PickItem>> = withContext(Dispatchers.IO) {
-        runCatching {
-            val tok = githubToken().trim()
-            require(tok.isNotEmpty()) { "未配置 GitHub Token，请在「我的」页填写（需 skapp 仓读取权限）" }
-            val url = "https://api.github.com/repos/jiegengxiangjianxue/skapp/contents/data/engine/picks_latest.json"
-            val (code, bytes) = httpGet(url, mapOf(
-                "Authorization" to "Bearer $tok",
-                "Accept" to "application/vnd.github.raw"))
-            require(code in 200..299) { "GitHub 返回 $code（检查 token 或文件是否存在）" }
-            val d = JSONObject(String(bytes))
-            val arr = d.getJSONArray("items")
-            (0 until arr.length()).take(30).map { i ->
-                val o = arr.getJSONObject(i)
-                PickItem(o.optString("symbol", "?"), o.optInt("rank", i + 1),
-                    d.optString("source", ""))
-            }
-        }
-    }
-}
-
-// ============================================================
-// ViewModel
-// ============================================================
+// ---------- ViewModel ----------
 class SkappViewModel(private val repo: MarketRepository) : ViewModel() {
-    private val _quotes = MutableStateFlow<UiState>(UiState.Loading)
-    val quotes: StateFlow<UiState> = _quotes.asStateFlow()
-
-    private val _news = MutableStateFlow<UiState>(UiState.Loading)
-    val news: StateFlow<UiState> = _news.asStateFlow()
-
-    private val _picks = MutableStateFlow<UiState>(UiState.Loading)
-    val picks: StateFlow<UiState> = _picks.asStateFlow()
+    val quotes = MutableStateFlow<Res<List<Quote>>>(Res.Err("加载中"))
+    val news = MutableStateFlow<Res<List<NewsItem>>>(Res.Err("加载中"))
+    val picks = MutableStateFlow<Res<List<PickItem>>>(Res.Err("加载中"))
+    val decision = MutableStateFlow<Res<Decision>>(Res.Err("加载中"))
+    val fusion = MutableStateFlow<Res<Fusion>>(Res.Err("加载中"))
+    val aiPicks = MutableStateFlow<Res<List<ScoredPick>>>(Res.Err("加载中"))
+    val strategies = MutableStateFlow<Res<List<StrategyRank>>>(Res.Err("加载中"))
+    val searchIndex = MutableStateFlow<Res<List<SymbolEntry>>>(Res.Err("加载中"))
 
     private val _watchlist = MutableStateFlow(
         listOf("sh600519", "sz300750", "sz002594", "sh600941", "hk00700"))
     val watchlist: StateFlow<List<String>> = _watchlist.asStateFlow()
 
     fun refreshQuotes() {
-        _quotes.value = UiState.Loading
+        quotes.value = Res.Err("加载中")
         viewModelScope.launch {
-            repo.realtimeQuotes(_watchlist.value)
-                .onSuccess { _quotes.value = if (it.isEmpty()) UiState.Error("行情数据为空") else UiState.Ready(quotes = it) }
-                .onFailure { _quotes.value = UiState.Error(it.message ?: "行情加载失败") }
+            val r = repo.realtimeQuotes(_watchlist.value)
+            // 与本地名称表合并显示中文名
+            val names = (searchIndex.value as? Res.Ok)?.v?.associate { it.symbol to it.name } ?: emptyMap()
+            quotes.value = when (r) {
+                is Res.Ok -> Res.Ok(r.v.map { q -> q.copy(name = names[q.symbol] ?: q.name) })
+                is Res.Err -> r
+            }
         }
     }
-
-    fun refreshNews() {
-        _news.value = UiState.Loading
-        viewModelScope.launch {
-            repo.news()
-                .onSuccess { _news.value = UiState.Ready(news = it) }
-                .onFailure { _news.value = UiState.Error(it.message ?: "快讯加载失败") }
+    fun refreshNews() { viewModelScope.launch { news.value = repo.news() } }
+    fun refreshPicks() { viewModelScope.launch { picks.value = repo.picks() } }
+    fun refreshAnalysis() {
+        viewModelScope.launch { decision.value = repo.decision() }
+        viewModelScope.launch { fusion.value = repo.fusion() }
+        viewModelScope.launch { aiPicks.value = repo.aiPicks() }
+        viewModelScope.launch { strategies.value = repo.strategyRank() }
+    }
+    fun ensureSearch() {
+        if (searchIndex.value is Res.Err("加载中")) viewModelScope.launch {
+            searchIndex.value = repo.searchIndex()
         }
     }
-
-    fun refreshPicks() {
-        _picks.value = UiState.Loading
-        viewModelScope.launch {
-            repo.picks()
-                .onSuccess { _picks.value = UiState.Ready(picks = it) }
-                .onFailure { _picks.value = UiState.Error(it.message ?: "推股加载失败") }
-        }
-    }
-
-    fun removeSymbol(sym: String) {
-        _watchlist.value = _watchlist.value - sym
-        refreshQuotes()
-    }
-
-    fun addSymbol(raw: String): Boolean {
-        val sym = raw.trim().lowercase().replace(".", "")
-        val ok = sym.length >= 6 && (sym.startsWith("sh") || sym.startsWith("sz") || sym.startsWith("hk"))
-        if (ok && sym !in _watchlist.value) {
-            _watchlist.value = _watchlist.value + sym
-            refreshQuotes()
-        }
+    fun removeSymbol(sym: String) { _watchlist.value -= sym; refreshQuotes() }
+    fun addSymbol(sym: String): Boolean {
+        val s = sym.trim().lowercase().replace(".", "")
+        val ok = s.length >= 6 && (s.startsWith("sh") || s.startsWith("sz") || s.startsWith("hk"))
+        if (ok && s !in _watchlist.value) { _watchlist.value += s; refreshQuotes() }
         return ok
+    }
+    fun addBySearch(entry: SymbolEntry) {
+        if (entry.symbol !in _watchlist.value) { _watchlist.value += entry.symbol; refreshQuotes() }
     }
 
     class Factory(private val repo: MarketRepository) : androidx.lifecycle.ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
-        override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            SkappViewModel(repo) as T
+        override fun <T : ViewModel> create(modelClass: Class<T>): T = SkappViewModel(repo) as T
     }
 }
 
-// ============================================================
-// UI 层（M3）：底部导航 4 Tab：行情 / 推股 / 消息 / 我的
-// ============================================================
-private val UpColor = Color(0xFFD32F2F)     // A股习惯：涨红
-private val DownColor = Color(0xFF2E7D32)   // 跌绿
-
-@Composable
-fun SkappTheme(content: @Composable () -> Unit) {
-    MaterialTheme(
-        colorScheme = if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme(),
-        content = content,
-    )
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun AppScreen(vm: SkappViewModel, token: String, onTokenChange: (String) -> Unit) {
-    var tab by remember { mutableIntStateOf(0) }
-    val quotes by vm.quotes.collectAsState()
-    val news by vm.news.collectAsState()
-    val picks by vm.picks.collectAsState()
-
-    LaunchedEffect(Unit) {
-        vm.refreshQuotes(); vm.refreshNews(); vm.refreshPicks()
-    }
-
-    Scaffold(
-        topBar = {
-            TopAppBar(title = { Text(listOf("行情", "推股", "消息", "我的")[tab]) })
-        },
-    ) { pad ->
-        Box(Modifier.fillMaxSize().padding(pad)) {
-            when (tab) {
-                0 -> QuotesTab(quotes, vm)
-                1 -> PicksTab(picks, vm)
-                2 -> NewsTab(news, vm)
-                3 -> SettingsTab(token, onTokenChange, vm)
+// ---------- Activity ----------
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        val prefs = getSharedPreferences("skapp", Context.MODE_PRIVATE)
+        setContent {
+            SkappTheme {
+                var token by remember { mutableStateOf(prefs.getString("gh_token", "") ?: "") }
+                val vm: SkappViewModel = viewModel(
+                    factory = SkappViewModel.Factory(MarketRepository { token }))
+                AppRoot(vm, token) { t ->
+                    token = t
+                    prefs.edit().putString("gh_token", t).apply()
+                }
             }
         }
     }
 }
 
-// ---------- Tab 1 行情 ----------
+@Composable
+fun AppRoot(vm: SkappViewModel, token: String, onToken: (String) -> Unit) {
+    var tab by remember { mutableIntStateOf(0) }
+    LaunchedEffect(Unit) {
+        vm.refreshQuotes(); vm.refreshNews(); vm.refreshAnalysis(); vm.ensureSearch()
+    }
+    Scaffold(
+        bottomBar = {
+            NavigationBar {
+                val items = listOf("行情", "推股", "分析", "消息", "我的")
+                items.forEachIndexed { i, label ->
+                    NavigationBarItem(selected = tab == i, onClick = { tab = i },
+                        icon = { Text(listOf("📈", "⭐", "🧠", "📰", "⚙")[i]) },
+                        label = { Text(label) })
+                }
+            }
+        },
+        topBar = {
+            TopAppBar(title = { Text(listOf("自选行情", "引擎推股", "策略分析", "市场消息", "设置")[tab]) })
+        },
+    ) { pad ->
+        Box(Modifier.fillMaxSize().padding(pad)) {
+            when (tab) {
+                0 -> QuotesTab(vm)
+                1 -> PicksTab(vm)
+                2 -> AnalysisTab(vm)
+                3 -> NewsTab(vm)
+                4 -> SettingsTab(token, onToken, vm)
+            }
+        }
+    }
+}
+
+// ---------- 通用组件 ----------
+@Composable
+fun <T> ResView(res: Res<T>, retry: () -> Unit, content: @Composable (T) -> Unit) {
+    when (res) {
+        is Res.Err -> if (res.message == "加载中") {
+            Box(Modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator() }
+        } else {
+            Column(Modifier.fillMaxSize().padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center) {
+                Text(res.message, textAlign = TextAlign.Center)
+                Spacer(Modifier.height(16.dp))
+                Button(onClick = retry) { Text("重试") }
+            }
+        }
+        is Res.Ok -> content(res.v)
+    }
+}
+
+// ---------- Tab 行情 ----------
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun QuotesTab(state: UiState, vm: SkappViewModel) {
-    var adding by remember { mutableStateOf(false) }
-    var input by remember { mutableStateOf("") }
+fun QuotesTab(vm: SkappViewModel) {
+    val quotes by vm.quotes.collectAsState()
+    val idx by vm.searchIndex.collectAsState()
+    var query by remember { mutableStateOf("") }
+    var showSearch by remember { mutableStateOf(false) }
+
     Column(Modifier.fillMaxSize()) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically) {
-            OutlinedTextField(
-                value = input, onValueChange = { input = it },
-                modifier = Modifier.weight(1f),
-                label = { Text("添加自选 (如 sh601318)") },
-                singleLine = true,
-            )
-            Spacer(Modifier.width(8.dp))
-            Button(onClick = {
-                if (vm.addSymbol(input)) { input = "" } else adding = true
-            }) { Text("添加") }
+        // 搜索框：支持中文名/代码（本地 5575 只索引，无需网络）
+        OutlinedTextField(
+            value = query, onValueChange = {
+                query = it; showSearch = it.isNotBlank(); vm.ensureSearch()
+            },
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            placeholder = { Text("搜股票名字或代码，如：中天科技 / 600522") },
+            singleLine = true,
+        )
+        if (showSearch) {
+            val results = when (val s = idx) {
+                is Res.Ok -> s.v.filter {
+                    it.name.contains(query, true) || it.symbol.contains(query.lowercase())
+                }.take(10)
+                is Res.Err -> emptyList()
+            }
+            if (idx is Res.Err("加载中")) {
+                LinearProgressIndicator(Modifier.fillMaxWidth().padding(horizontal = 16.dp))
+            }
+            LazyColumn(Modifier.heightIn(max = 280.dp)) {
+                items(results, key = { it.symbol }) { e ->
+                    ListItem(headlineContent = { Text(e.name) },
+                        supportingContent = { Text(e.symbol) },
+                        trailingContent = {
+                            TextButton(onClick = { vm.addBySearch(e); query = ""; showSearch = false }) {
+                                Text("+自选") }
+                        })
+                }
+            }
+            HorizontalDivider()
         }
-        when (state) {
-            is UiState.Loading -> Box(Modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator() }
-            is UiState.Error -> ErrView(state.message) { vm.refreshQuotes() }
-            is UiState.Ready -> LazyColumn(
-                Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                items(state.quotes, key = { it.symbol }) { q ->
+        ResView(quotes, { vm.refreshQuotes() }) { list ->
+            LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(list, key = { it.symbol }) { q ->
                     ElevatedCard(Modifier.fillMaxWidth()) {
                         Row(Modifier.padding(16.dp).heightIn(min = 48.dp),
                             verticalAlignment = Alignment.CenterVertically) {
@@ -290,34 +231,41 @@ private fun QuotesTab(state: UiState, vm: SkappViewModel) {
             }
         }
     }
-    if (adding) {
-        AlertDialog(onDismissRequest = { adding = false },
-            title = { Text("代码格式") },
-            text = { Text("支持：sh 沪 / sz 深 / hk 港 + 代码，如 sh601318、hk00700") },
-            confirmButton = { TextButton(onClick = { adding = false }) { Text("知道了") } })
-    }
 }
 
-// ---------- Tab 2 推股 ----------
+// ---------- Tab 推股 ----------
 @Composable
-private fun PicksTab(state: UiState, vm: SkappViewModel) {
-    when (state) {
-        is UiState.Loading -> Box(Modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator() }
-        is UiState.Error -> ErrView(state.message) { vm.refreshPicks() }
-        is UiState.Ready -> Column(Modifier.fillMaxSize().padding(16.dp)) {
-            val src = state.picks.firstOrNull()?.source ?: ""
-            if (src.isNotEmpty()) {
-                Text("来源：$src", style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.padding(bottom = 8.dp))
-            }
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(state.picks, key = { it.symbol + it.rank }) { p ->
+fun PicksTab(vm: SkappViewModel) {
+    val picks by vm.picks.collectAsState()
+    val ai by vm.aiPicks.collectAsState()
+    var sub by remember { mutableIntStateOf(0) }
+    Column(Modifier.fillMaxSize()) {
+        TabRow(sub) {
+            Tab(sub == 0, { sub = 0 }) { Text("引擎推股", Modifier.padding(12.dp)) }
+            Tab(sub == 1, { sub = 1 }) { Text("AI 选股 Top50", Modifier.padding(12.dp)) }
+        }
+        if (sub == 0) ResView(picks, { vm.refreshPicks() }) { list ->
+            LazyColumn(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(list, key = { it.symbol + it.rank }) { p ->
                     ElevatedCard(Modifier.fillMaxWidth()) {
-                        Row(Modifier.padding(16.dp).heightIn(min = 48.dp),
-                            verticalAlignment = Alignment.CenterVertically) {
+                        Row(Modifier.padding(16.dp).heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
                             Text("#${p.rank}", style = MaterialTheme.typography.titleMedium,
-                                modifier = Modifier.width(48.dp))
+                                color = MaterialTheme.colorScheme.primary, modifier = Modifier.width(52.dp))
                             Text(p.symbol, style = MaterialTheme.typography.titleMedium)
+                        }
+                    }
+                }
+            }
+        }
+        else ResView(ai, { vm.refreshAnalysis() }) { list ->
+            LazyColumn(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(list, key = { it.symbol }) { p ->
+                    ElevatedCard(Modifier.fillMaxWidth()) {
+                        Row(Modifier.padding(16.dp).heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text(p.symbol, Modifier.weight(1f),
+                                style = MaterialTheme.typography.titleMedium)
+                            Text("%.3f".format(p.score), style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.primary)
                         }
                     }
                 }
@@ -326,26 +274,83 @@ private fun PicksTab(state: UiState, vm: SkappViewModel) {
     }
 }
 
-// ---------- Tab 3 消息 ----------
+// ---------- Tab 分析 ----------
 @Composable
-private fun NewsTab(state: UiState, vm: SkappViewModel) {
-    when (state) {
-        is UiState.Loading -> Box(Modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator() }
-        is UiState.Error -> ErrView(state.message) { vm.refreshNews() }
-        is UiState.Ready -> LazyColumn(
-            Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            items(state.news) { n ->
+fun AnalysisTab(vm: SkappViewModel) {
+    val dec by vm.decision.collectAsState()
+    val fus by vm.fusion.collectAsState()
+    val strat by vm.strategies.collectAsState()
+    LazyColumn(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        item {
+            ResView(dec, { vm.refreshAnalysis() }) { d ->
+                ElevatedCard(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("今日决策", style = MaterialTheme.typography.titleMedium)
+                        Text(d.action, style = MaterialTheme.typography.headlineSmall,
+                            color = MaterialTheme.colorScheme.primary)
+                        Text("建议仓位：${(d.positionPct * 100).toInt()}%   市场情绪：${d.mood}(${d.score})",
+                            style = MaterialTheme.typography.bodyMedium)
+                        d.reasons.forEach { Text("· $it", style = MaterialTheme.typography.bodySmall) }
+                    }
+                }
+            }
+        }
+        item {
+            ResView(fus, { vm.refreshAnalysis() }) { f ->
+                ElevatedCard(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("引擎融合 E=${f.e}", style = MaterialTheme.typography.titleMedium)
+                        Text("状态：${f.state}   引擎一致度：${(f.agreement * 100).toInt()}%",
+                            style = MaterialTheme.typography.bodyMedium)
+                        f.parts.forEach { (k, v) ->
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Text(k, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                                Text(if (v.missing) "缺数据" else "score=${v.score}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (v.missing) MaterialTheme.colorScheme.onSurfaceVariant
+                                            else MaterialTheme.colorScheme.primary)
+                                Text(" w=${v.weight}", style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        item {
+            ResView(strat, { vm.refreshAnalysis() }) { list ->
+                ElevatedCard(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("策略排名 Top${list.size}", style = MaterialTheme.typography.titleMedium)
+                        list.forEach { s ->
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Text(s.name, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                                Text("%.2f".format(s.score), style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.primary)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ---------- Tab 消息 ----------
+@Composable
+fun NewsTab(vm: SkappViewModel) {
+    val news by vm.news.collectAsState()
+    ResView(news, { vm.refreshNews() }) { list ->
+        LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(list) { n ->
                 ElevatedCard(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(12.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            AssistChip(onClick = {}, label = { Text(n.sentiment) },
-                                colors = AssistChipDefaults.assistChipColors(
-                                    labelColor = when (n.sentiment) {
-                                        "利好" -> UpColor; "利空" -> DownColor
-                                        else -> MaterialTheme.colorScheme.onSurfaceVariant
-                                    }))
+                            Text(n.sentiment, style = MaterialTheme.typography.labelMedium,
+                                color = when (n.sentiment) {
+                                    "利好" -> UpColor; "利空" -> DownColor
+                                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+                                })
                             Spacer(Modifier.width(8.dp))
                             Text(n.ts, style = MaterialTheme.typography.bodySmall)
                         }
@@ -358,59 +363,32 @@ private fun NewsTab(state: UiState, vm: SkappViewModel) {
     }
 }
 
-// ---------- Tab 4 我的 ----------
+// ---------- Tab 我的 ----------
 @Composable
-private fun SettingsTab(token: String, onTokenChange: (String) -> Unit, vm: SkappViewModel) {
+fun SettingsTab(token: String, onToken: (String) -> Unit, vm: SkappViewModel) {
     var draft by remember { mutableStateOf(token) }
     Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("GitHub Token", style = MaterialTheme.typography.titleMedium)
-        Text("用于读取 skapp 仓的推股/快照数据（仅保存在本机）。行情与快讯无需 token，直连公开数据源。",
+        Text("推股 / 分析 / 策略数据来自 skapp 仓（需读取权限）。行情与快讯无需 token。",
             style = MaterialTheme.typography.bodySmall)
-        OutlinedTextField(
-            value = draft, onValueChange = { draft = it },
+        OutlinedTextField(value = draft, onValueChange = { draft = it },
             modifier = Modifier.fillMaxWidth(),
-            label = { Text("ghp_...（fine-grained token 亦可）") },
-            singleLine = true,
-        )
+            label = { Text("ghp_... 或 github_pat_...") }, singleLine = true)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = { onTokenChange(draft); vm.refreshPicks() }) { Text("保存") }
-            OutlinedButton(onClick = { vm.refreshQuotes(); vm.refreshNews() }) { Text("刷新行情/快讯") }
+            Button(onClick = {
+                onToken(draft)
+                vm.refreshPicks(); vm.refreshAnalysis()
+            }) { Text("保存并刷新") }
         }
         HorizontalDivider()
-        Text("数据源", style = MaterialTheme.typography.titleMedium)
-        Text("· 行情：腾讯 qt.gtimg.cn（A股+港股实时）\n· 快讯：新浪 7x24\n· 推股/复盘：GitHub 仓库快照（收盘后 Actions 自动生成）",
+        Text("数据链路", style = MaterialTheme.typography.titleMedium)
+        Text(
+            "· 行情：腾讯 qt（A股+港股实时）\n" +
+            "· 快讯：新浪 7x24（利好/利空规则同后端）\n" +
+            "· 推股/决策/融合/策略：skapp 仓 data/engine/（网站同源产物）\n" +
+            "· 收盘后 Actions 自动更新引擎数据与快照",
             style = MaterialTheme.typography.bodySmall)
-        Text("推股与复盘为引擎历史产物快照，仅供观察，不构成投资建议。",
+        Text("推股与分析为引擎历史产物，仅供观察，不构成投资建议。",
             style = MaterialTheme.typography.bodySmall)
-    }
-}
-
-// ---------- 通用 ----------
-@Composable
-private fun ErrView(message: String, retry: () -> Unit) {
-    Column(Modifier.fillMaxSize().padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center) {
-        Text(message, textAlign = TextAlign.Center)
-        Spacer(Modifier.height(16.dp))
-        Button(onClick = retry) { Text("重试") }
-    }
-}
-
-class MainActivity : ComponentActivity() {
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        val prefs = getSharedPreferences("skapp", Context.MODE_PRIVATE)
-        setContent {
-            SkappTheme {
-                var token by remember { mutableStateOf(prefs.getString("gh_token", "") ?: "") }
-                val vm: SkappViewModel = viewModel(
-                    factory = SkappViewModel.Factory(MarketRepository { token }))
-                AppScreen(vm, token) { t ->
-                    token = t
-                    prefs.edit().putString("gh_token", t).apply()
-                }
-            }
-        }
     }
 }
