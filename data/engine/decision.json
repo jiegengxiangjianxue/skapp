@@ -1,0 +1,204 @@
+{
+ "ts": "2026-10-16T04:27:09",
+ "config": {
+  "capital": 25000,
+  "risk_frac": 0.02,
+  "max_position": 0.6,
+  "half_kelly": true
+ },
+ "decision": {
+  "action": "轻仓试探(凯利)",
+  "position_pct": 0.25,
+  "capital": 25000,
+  "budget": 6250,
+  "cycle": "?",
+  "global": {
+   "score": 0,
+   "mood": "中性"
+  },
+  "kelly": {},
+  "win_rate_recent": 0.45,
+  "n_recent": 0,
+  "avg_ret_recent": 0.0
+ },
+ "reasons": [
+  "全球中性(0) — 轻仓, 温和量+低位双过滤"
+ ],
+ "buy_list": [],
+ "fin_screen_picks": [
+  {
+   "symbol": "sh600519",
+   "name": "",
+   "close": 1312.97,
+   "ret": 0.021,
+   "score": 100.0,
+   "fin_z": 0.94,
+   "n_dims": 5,
+   "report_date": "2026-06-30",
+   "why": "ROE 16.8 · 毛利 90% · 营收YoY 69% · 净利YoY 63% · 负债率 15%"
+  },
+  {
+   "symbol": "sz002773",
+   "name": "",
+   "close": null,
+   "ret": null,
+   "score": 98.8,
+   "fin_z": 0.908,
+   "n_dims": 5,
+   "report_date": "2026-06-30",
+   "why": "ROE 6.0 · 毛利 88% · 营收YoY 108% · 净利YoY 84% · 负债率 8%"
+  },
+  {
+   "symbol": "sh600276",
+   "name": "",
+   "close": 46.6,
+   "ret": 0.024,
+   "score": 97.6,
+   "fin_z": 0.874,
+   "n_dims": 5,
+   "report_date": "2026-06-30",
+   "why": "ROE 8.0 · 毛利 86% · 营收YoY 90% · 净利YoY 96% · 负债率 8%"
+  },
+  {
+   "symbol": "sz002732",
+   "name": "",
+   "close": null,
+   "ret": null,
+   "score": 95.2,
+   "fin_z": 0.809,
+   "n_dims": 5,
+   "report_date": "2026-06-30",
+   "why": "ROE 0.9 · 毛利 26% · 营收YoY 125% · 净利YoY 28249% · 负债率 24%"
+  },
+  {
+   "symbol": "sz002690",
+   "name": "",
+   "close": null,
+   "ret": null,
+   "score": 93.5,
+   "fin_z": 0.764,
+   "n_dims": 5,
+   "report_date": "2026-06-30",
+   "why": "ROE 11.0 · 毛利 54% · 营收YoY 165% · 净利YoY 172% · 负债率 20%"
+  },
+  {
+   "symbol": "sz002653",
+   "name": "",
+   "close": null,
+   "ret": null,
+   "score": 93.4,
+   "fin_z": 0.76,
+   "n_dims": 5,
+   "report_date": "2026-06-30",
+   "why": "ROE 18.3 · 毛利 80% · 营收YoY 98% · 净利YoY 53% · 负债率 39%"
+  },
+  {
+   "symbol": "sz002749",
+   "name": "",
+   "close": null,
+   "ret": null,
+   "score": 93.3,
+   "fin_z": 0.76,
+   "n_dims": 5,
+   "report_date": "2026-06-30",
+   "why": "ROE 9.8 · 毛利 44% · 营收YoY 190% · 净利YoY 205% · 负债率 16%"
+  },
+  {
+   "symbol": "sz002670",
+   "name": "",
+   "close": null,
+   "ret": null,
+   "score": 92.7,
+   "fin_z": 0.743,
+   "n_dims": 4,
+   "report_date": "2026-06-30",
+   "why": "ROE 1.9 · 营收YoY 214% · 净利YoY 14580% · 负债率 78%"
+  },
+  {
+   "symbol": "sz002818",
+   "name": "",
+   "close": null,
+   "ret": null,
+   "score": 91.4,
+   "fin_z": 0.706,
+   "n_dims": 5,
+   "report_date": "2026-06-30",
+   "why": "ROE 10.6 · 毛利 63% · 营收YoY 95% · 净利YoY 61% · 负债率 11%"
+  },
+  {
+   "symbol": "sz002826",
+   "name": "",
+   "close": null,
+   "ret": null,
+   "score": 90.9,
+   "fin_z": 0.694,
+   "n_dims": 5,
+   "report_date": "2026-06-30",
+   "why": "ROE 7.8 · 毛利 82% · 营收YoY 97% · 净利YoY 239% · 负债率 28%"
+  },
+  {
+   "symbol": "sh603259",
+   "name": "",
+   "close": 154.5,
+   "ret": 0.002,
+   "score": 88.9,
+   "fin_z": 0.639,
+   "n_dims": 5,
+   "report_date": "2026-06-30",
+   "why": "ROE 13.2 · 毛利 54% · 营收YoY 132% · 净利YoY 138% · 负债率 28%"
+  },
+  {
+   "symbol": "sz002763",
+   "name": "",
+   "close": null,
+   "ret": null,
+   "score": 87.0,
+   "fin_z": 0.59,
+   "n_dims": 5,
+   "report_date": "2026-06-30",
+   "why": "ROE 7.6 · 毛利 69% · 营收YoY 101% · 净利YoY 50% · 负债率 26%"
+  },
+  {
+   "symbol": "sz002755",
+   "name": "",
+   "close": null,
+   "ret": null,
+   "score": 86.8,
+   "fin_z": 0.584,
+   "n_dims": 5,
+   "report_date": "2026-06-30",
+   "why": "ROE 3.8 · 毛利 82% · 营收YoY 81% · 净利YoY 43% · 负债率 25%"
+  },
+  {
+   "symbol": "sz002767",
+   "name": "",
+   "close": null,
+   "ret": null,
+   "score": 86.5,
+   "fin_z": 0.576,
+   "n_dims": 5,
+   "report_date": "2026-06-30",
+   "why": "ROE 1.6 · 毛利 31% · 营收YoY 149% · 净利YoY 3928% · 负债率 32%"
+  },
+  {
+   "symbol": "sz002738",
+   "name": "",
+   "close": null,
+   "ret": null,
+   "score": 86.1,
+   "fin_z": 0.566,
+   "n_dims": 5,
+   "report_date": "2026-06-30",
+   "why": "ROE 8.7 · 毛利 53% · 营收YoY 166% · 净利YoY 119% · 负债率 36%"
+  }
+ ],
+ "agent_debate": {},
+ "rules": [
+  "T+1: 次日14:45唯一决策点",
+  "冲高+2%止盈",
+  "破-2%止损",
+  "弱市(全球<-15)空仓 — 回测: 弱市选票次日均-0.8%",
+  "纪律胜率<40%自动降仓 — ADAPT自适应"
+ ],
+ "note": "不构成投资建议"
+}
