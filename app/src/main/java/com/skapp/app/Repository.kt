@@ -93,7 +93,8 @@ class MarketRepository(private val githubToken: () -> String) {
      *  未填 token 则匿名 raw 直读（公开仓，零凭据可用）。 */
     private suspend fun repoFile(path: String): Res<String> = withContext(Dispatchers.IO) {
         try {
-            val tok = githubToken().trim()
+            val tok = githubToken().split("\n", " ", ",").map { it.trim() }
+                .firstOrNull { it.isNotEmpty() } ?: ""
             if (tok.isNotEmpty()) {
                 val api = "https://api.github.com/repos/jiegengxiangjianxue/skapp-data/contents/$path?ref=main&t=" + System.currentTimeMillis()
                 val (code, bytes) = httpGet(api, mapOf(
