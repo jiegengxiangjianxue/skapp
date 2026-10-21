@@ -190,7 +190,8 @@ fun QuotesTab(vm: SkappViewModel) {
                 }.take(10)
                 is Res.Err -> emptyList()
             }
-            if (idx is Res.Err("加载中")) {
+            val idxLoading = (idx as? Res.Err)?.message == "加载中"
+            if (idxLoading) {
                 LinearProgressIndicator(Modifier.fillMaxWidth().padding(horizontal = 16.dp))
             }
             LazyColumn(Modifier.heightIn(max = 280.dp)) {
