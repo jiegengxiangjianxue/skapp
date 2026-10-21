@@ -402,9 +402,12 @@ fun PicksTab(vm: SkappViewModel) {
                         }
                     }
                 }
-                if (showDetail) SymbolDetailSheet(p.code, p.name,
-                    "${p.section} · 评分 %.1f\n${p.extra}\n${p.why.joinToString("\\n") { "· $it" }}"
-                        .format(p.score), { showDetail = false }, vm)
+                if (showDetail) {
+                    val detail = p.section + " · 评分 " + "%.1f".format(p.score) +
+                        (if (p.extra.isNotBlank()) "\n" + p.extra else "") +
+                        p.why.joinToString("") { "\n· $it" }
+                    SymbolDetailSheet(p.code, p.name, detail, { showDetail = false }, vm)
+                }
             }
         }
     }
