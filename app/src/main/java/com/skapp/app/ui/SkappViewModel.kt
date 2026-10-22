@@ -413,7 +413,7 @@ class SkappViewModel : ViewModel() {
                 if (f != null) {
                     // 引擎样本: trend/momentum/volume 三路+回本 gate
                     val le = LocalEngine.analyze(bars)
-                    val valid = le.engines.count { it.score >= 55 }
+                    val valid = le.engines.count { (it.score ?: 0.0) >= 55 }
                     if (valid >= 4) v.add("本地${valid}引擎看多")
                 }
                 val r22 = recoupR.recoup22
