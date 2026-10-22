@@ -22,7 +22,7 @@ jobs:
       - name: Build debug APK
         run: |
           gradle wrapper --gradle-version 8.9 || true
-          ./gradlew assembleDebug --no-daemon --no-build-cache
+          ./gradlew assembleDebug --no-daemon --no-build-cache -Pkotlin.compiler.execution.strategy=in-process
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
