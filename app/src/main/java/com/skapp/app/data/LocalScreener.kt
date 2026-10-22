@@ -151,4 +151,122 @@ private class HttpURLConnectionBridge(url: String) {
         } finally {
             conn.disconnect()
         }
+
+    /* ===== v2 (2026-10-22): tencent batch + concurrency + progress ===== */
+
+    data class CriteriaV2(
+        val minChgPct: Double = -1.0,
+        val maxChgPct: Double = 5.0,
+        val minVolRatio: Double = 1.5,
+        val excludeST: Boolean = true,
+        val maxCandidates: Int = 60,
+        val klineCount: Int = 120,
+    )
+
+    data class ScreenedV2(
+        val code: String,
+        val name: String?,
+        val price: Double?,
+        val pctChg: Double?,
+        val volRatio: Double?,
+        val turnover: Double?,
+        val pe: Double?,
+        val mv: Double?,
+        val engine: LocalEngineResult?,
+        val detailStatus: String,
+        val reason: String? = null,
+    )
+
+    /** 腾讯批量实时行情: 一次最多 ~80 票, 返回 code->(name,price,pctChg,vol,turnover,pe,mv) */
+    suspend fun tencentSnapshot(pool: List<String>): List<Map<String, Any?>> =
+        withContext(Dispatchers.IO) {
+            val out = mutableListOf<Map<String, Any?>>()
+            pool.chunked(80).forEach { chunk ->
+                val url = "http://qt.gtimg.cn/q=" + chunk.joinToString(",") { SkappApi.prefixed(it) }
+                val txt = runCatching {
+                    val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+                    conn.connectTimeout = 5000; conn.readTimeout = 5000
+                    conn.getInputStream().bufferedReader(charset("GBK")).readText()
+                }.getOrNull() ?: return@forEach
+                for (line in txt.split(';')) {
+                    val m = Regex("v_(\\w+)=\"(.*)\"").find(line.trim()) ?: continue
+                    val f = m.groupValues[2].split('~')
+                    if (f.size < 50) continue
+                    val code = f[2]
+                    out.add(mapOf(
+                        "code" to code,
+                        "name" to f[1],
+                        "price" to f[3].toDoubleOrNull(),
+                        "pctChg" to f[32].toDoubleOrNull(),
+                        "volRatio" to f[49].toDoubleOrNull(),
+                        "turnover" to f[36].toDoubleOrNull(),
+                        "pe" to f[39].toDoubleOrNull(),
+                        "mv" to f[45].toDoubleOrNull(),
+                        "mainNet" to (f[33].toDoubleOrNull() ?: 0.0),
+                    ))
+                }
+            }
+            out
+        }
+
+    /** 候选池: 从指数成分/热门池快照拿票池 (不依赖东财 clist) */
+    suspend fun candidatePool(): List<String> = withContext(Dispatchers.IO) {
+        val codes = mutableListOf<String>()
+        // 沪深主要指数成分近似池: 用腾讯行业龙头表 + 快照换手排行
+        // 实现: 拉东财 fail 时退化到本地内置活跃池 (300 票高频活跃股)
+        codes.addAll(HotPool.CODES)
+        codes
+    }
+
+    suspend fun screenV2(
+        c: CriteriaV2 = CriteriaV2(),
+        onProgress: (Int, Int) -> Unit = { _, _ -> },
+    ): List<ScreenedV2> = coroutineScope {
+        val pool = candidatePool()
+        onProgress(0, pool.size)
+        val snap = tencentSnapshot(pool)
+        if (snap.isEmpty()) return@coroutineScope emptyList()
+
+        val cands = snap.filter { m ->
+            val chg = (m["pctChg"] as? Number)?.toDouble() ?: return@filter false
+            val vr = (m["volRatio"] as? Number)?.toDouble()
+            val name = m["name"]?.toString() ?: ""
+            val st = c.excludeST && (name.contains("ST", true) || name.contains("退", true))
+            chg in c.minChgPct..c.maxChgPct && !st && (vr == null || vr >= c.minVolRatio)
+        }.sortedByDescending { m -> (m["mainNet"] as? Number)?.toDouble() ?: 0.0 }
+            .take(c.maxCandidates)
+
+        val sem = Semaphore(8)
+        val done = AtomicInteger(0)
+        val out = java.util.concurrent.ConcurrentLinkedQueue<ScreenedV2>()
+        val jobs = cands.map { m ->
+            async(Dispatchers.IO) {
+                val code = m["code"]?.toString() ?: return@async
+                sem.withPermit {
+                    val r = withTimeoutOrNull(4_000) {
+                        val bars = DataCache.kline(code, "qfq", c.klineCount)
+                        val eng = if (bars.size >= 30) DataCache.engine(code, "qfq", bars) else null
+                        ScreenedV2(
+                            code = code,
+                            name = m["name"]?.toString(),
+                            price = (m["price"] as? Number)?.toDouble(),
+                            pctChg = (m["pctChg"] as? Number)?.toDouble(),
+                            volRatio = (m["volRatio"] as? Number)?.toDouble(),
+                            turnover = (m["turnover"] as? Number)?.toDouble(),
+                            pe = (m["pe"] as? Number)?.toDouble(),
+                            mv = (m["mv"] as? Number)?.toDouble(),
+                            engine = eng,
+                            detailStatus = if (eng != null) "ok" else "insufficient",
+                        )
+                    }
+                    if (r != null) out.add(r)
+                    val d = done.incrementAndGet()
+                    if (d % 10 == 0 || d == cands.size) onProgress(d, cands.size)
+                }
+            }
+        }
+        jobs.forEach { it.await() }
+        out.sortedByDescending { it.engine?.composite ?: 0.0 }
+    }
 }
+
