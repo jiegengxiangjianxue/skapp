@@ -5,6 +5,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Semaphore
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withTimeoutOrNull
@@ -27,7 +28,7 @@ object LocalScreenerV2 {
         val klineCount: Int = 120,
     )
 
-    data class Screened(
+    data class ScreenedV2(
         val code: String,
         val name: String?,
         val price: Double?,
@@ -85,7 +86,7 @@ object LocalScreenerV2 {
     suspend fun screen(
         c: Criteria = Criteria(),
         onProgress: (Int, Int) -> Unit = { _, _ -> },
-    ): List<Screened> = coroutineScope {
+    ): List<ScreenedV2> = coroutineScope {
         val pool = candidatePool()
         onProgress(0, pool.size)
         val snap = tencentSnapshot(pool)
@@ -101,8 +102,8 @@ object LocalScreenerV2 {
             .take(c.maxCandidates)
 
         val sem = Semaphore(8)
-        var done = 0
-        val out = java.util.concurrent.ConcurrentLinkedQueue<Screened>()
+        val done = AtomicInteger(0)
+        val out = java.util.concurrent.ConcurrentLinkedQueue<ScreenedV2>()
         val jobs = cands.map { m ->
             async(Dispatchers.IO) {
                 sem.withPermit {
@@ -124,10 +125,8 @@ object LocalScreenerV2 {
                         )
                     }
                     if (r != null) out.add(r)
-                    synchronized(done) {
-                        done++
-                        if (done % 10 == 0 || done == cands.size) onProgress(done, cands.size)
-                    }
+                    val d = done.incrementAndGet()
+                    if (d % 10 == 0 || d == cands.size) onProgress(d, cands.size)
                 }
             }
         }
