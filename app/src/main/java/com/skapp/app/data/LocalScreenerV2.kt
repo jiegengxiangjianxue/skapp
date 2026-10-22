@@ -106,12 +106,12 @@ object LocalScreenerV2 {
         val out = java.util.concurrent.ConcurrentLinkedQueue<ScreenedV2>()
         val jobs = cands.map { m ->
             async(Dispatchers.IO) {
+                val code = m["code"]?.toString() ?: return@async
                 sem.withPermit {
-                    val code = m["code"]?.toString() ?: return@withPermit
                     val r = withTimeoutOrNull(4_000) {
                         val bars = DataCache.kline(code, "qfq", c.klineCount)
                         val eng = if (bars.size >= 30) DataCache.engine(code, "qfq", bars) else null
-                        Screened(
+                        ScreenedV2(
                             code = code,
                             name = m["name"]?.toString(),
                             price = (m["price"] as? Number)?.toDouble(),
