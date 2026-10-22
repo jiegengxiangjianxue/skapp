@@ -202,7 +202,7 @@ object LocalScreener {
 
         val sem = Semaphore(8)
         val done = AtomicInteger(0)
-        val out = java.util.concurrent.ConcurrentLinkedQueue<ScreenedV2>()
+        val out = java.util.concurrent.ConcurrentLinkedQueue<Screened>()
         val jobs = cands.map { m ->
             async(Dispatchers.IO) {
                 val code = m["code"]?.toString() ?: return@async
