@@ -164,7 +164,7 @@ private class HttpURLConnectionBridge(url: String) {
  *      ③新增 onProgress 回调, UI 实时显示进度不再干转圈
  * 本地引擎照旧本地算 (技术指标全本地, AI 分析走 GitCodeAiClient)
  */
-object LocalScreenerV2 {
+object ScreenV2 {
 
     data class Criteria(
         val minChgPct: Double = -1.0,
@@ -175,7 +175,7 @@ object LocalScreenerV2 {
         val klineCount: Int = 120,
     )
 
-    data class ScreenedV2(
+    data class Pick2(
         val code: String,
         val name: String?,
         val price: Double?,
@@ -233,7 +233,7 @@ object LocalScreenerV2 {
     suspend fun screen(
         c: Criteria = Criteria(),
         onProgress: (Int, Int) -> Unit = { _, _ -> },
-    ): List<ScreenedV2> = coroutineScope {
+    ): List<Pick2> = coroutineScope {
         val pool = candidatePool()
         onProgress(0, pool.size)
         val snap = tencentSnapshot(pool)
@@ -250,7 +250,7 @@ object LocalScreenerV2 {
 
         val sem = Semaphore(8)
         val done = AtomicInteger(0)
-        val out = java.util.concurrent.ConcurrentLinkedQueue<ScreenedV2>()
+        val out = java.util.concurrent.ConcurrentLinkedQueue<Pick2>()
         val jobs = cands.map { m ->
             async(Dispatchers.IO) {
                 val code = m["code"]?.toString() ?: return@async
@@ -258,7 +258,7 @@ object LocalScreenerV2 {
                     val r = withTimeoutOrNull(4_000) {
                         val bars = DataCache.kline(code, "qfq", c.klineCount)
                         val eng = if (bars.size >= 30) DataCache.engine(code, "qfq", bars) else null
-                        ScreenedV2(
+                        Pick2(
                             code = code,
                             name = m["name"]?.toString(),
                             price = (m["price"] as? Number)?.toDouble(),
