@@ -113,6 +113,8 @@ data class UiState(
     val holo: HoloBundle? = null,
     /** 本地实时选股结果 */
     val screened: List<LocalScreener.Screened> = emptyList(),
+    val liveSignals: List<PickSignal> = emptyList(),
+    val liveValues: List<PickSignal> = emptyList(),
     val screening: Boolean = false,
     val screenMsg: String? = null,
     /** 逐条快讯的实时算法计算（直接显示在标题下） */
@@ -202,6 +204,7 @@ class SkappViewModel : ViewModel() {
                 summary = summaryD.await(),
                 symbols = symbols,
             )
+            nameIndex = null   // 索引失效, 下次 nameOf 重建
             loadAllSources()
             loadBanProb()
             refreshQuotes()
@@ -345,18 +348,29 @@ class SkappViewModel : ViewModel() {
                 stale = quoteAge == null || quoteAge > 10 * 60 * 1000,
             )
         }
-        _state.value = _state.value.copy(
-            quotes = rows,
-            quoteTs = quotes.values.firstOrNull()?.ts,
-        )
+        val cur = _state.value
+        // 只有内容真变化才 setState（避免 30s 轮询造成无谓全屏重组 = 卡死元凶之一）
+        val changed = cur.quotes.size != rows.size ||
+            rows.zip(cur.quotes).any { (r, o) -> o?.price != r.price || o?.pctChg != r.pctChg }
+        if (changed || cur.quotes.isEmpty()) {
+            _state.value = cur.copy(
+                quotes = rows,
+                quoteTs = quotes.values.firstOrNull()?.ts,
+            )
+        }
     }
 
-    /** 名称回退：先 names，再 symbols */
+    /** 名称回退：O(1) 索引（修复每30s全表线性扫导致的主线程卡顿） */
+    @Volatile private var nameIndex: Map<String, String>? = null
+    private fun buildNameIndex(): Map<String, String> =
+        _state.value.symbols.mapNotNull { s ->
+            SkappApi.normalize(s.code)?.let { it to (s.name ?: s.code) }
+        }.toMap()
+
     private fun nameOf(code: String): String? {
         val n = SkappApi.normalize(code) ?: return null
-        return _state.value.symbols.firstOrNull {
-            SkappApi.normalize(it.code) == n
-        }?.name
+        val idx = nameIndex ?: buildNameIndex().also { nameIndex = it }
+        return idx[n]
     }
 
     /** 搜索：代码或名称模糊匹配 */
@@ -594,8 +608,11 @@ class SkappViewModel : ViewModel() {
 
     /** 本地实时选股 v2: 腾讯批量行情(免403) + 全并发超时 + 重入保护 + 进度回调 */
     private var screeningJob: kotlinx.coroutines.Job? = null
-    fun runScreen() {
+    @Volatile private var lastScreenAt: Long = 0
+    fun runScreen(force: Boolean = false) {
         if (screeningJob?.isActive == true) return   // 重入保护: 点快了不重复跑
+        val now = System.currentTimeMillis()
+        if (!force && now - lastScreenAt < 60_000 && _state.value.screened.isNotEmpty()) return  // 60s 防抖
         screeningJob = viewModelScope.launch {
             _state.value = _state.value.copy(screening = true, screenMsg = "实时选股中… 0/0")
             val res = runCatching {
@@ -609,9 +626,31 @@ class SkappViewModel : ViewModel() {
                 )
                 return@launch
             }
+            // 本地实时结果 → 派生「指标共振 / 多维评分」tab 数据 (不再用云端快照)
+            val liveSig = res.filter { it.engine?.composite != null }.map { s ->
+                PickSignal(
+                    code = s.code, name = s.name ?: s.code,
+                    price = s.price, pctChg = s.pctChg,
+                    score = s.engine?.composite,
+                    engine = s.engine?.engines?.filter { it.score != null && it.score!! >= 60 }?.joinToString(" ") { it.engine }?.takeIf { it.isNotBlank() },
+                )
+            }
+            val liveVal = res.filter { it.engine?.composite != null }
+                .sortedByDescending { it.engine?.composite ?: 0.0 }
+                .map { s ->
+                    PickSignal(
+                        code = s.code, name = s.name ?: s.code,
+                        price = s.price, pctChg = s.pctChg,
+                        score = s.engine?.composite,
+                        engine = "综合 ${"%.1f".format(s.engine?.composite ?: 0.0)}（${s.engine?.nValid ?: 0} 引擎）",
+                    )
+                }
+            lastScreenAt = System.currentTimeMillis()
             _state.value = _state.value.copy(
                 screening = false,
                 screened = res,
+                liveSignals = liveSig,
+                liveValues = liveVal,
                 screenMsg = if (res.isEmpty()) "预筛后无满足条件的股票" else null,
             )
         }
