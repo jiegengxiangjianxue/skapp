@@ -23,6 +23,7 @@ import com.skapp.app.data.KPeriod
 import com.skapp.app.data.KlineApi
 import com.skapp.app.data.LocalEngine
 import com.skapp.app.data.LocalEngineResult
+import com.skapp.app.data.RecoupCalc
 import com.skapp.app.data.LocalScreener
 import com.skapp.app.data.MarketDataClient
 import com.skapp.app.data.MarketHours
@@ -88,6 +89,8 @@ data class UiState(
     val aShareIndices: List<Map<String, Any?>> = emptyList(),
     val globalIndices: List<Map<String, Any?>> = emptyList(),
     val localEngine: LocalEngineResult? = null,
+    val recoup: RecoupCalc.Result? = null,
+    val engineVotes: String? = null,
     val detailAdjust: String = "qfq",
     val fundFlow: List<Map<String, Any?>> = emptyList(),
     val boardsOf: List<Map<String, Any?>> = emptyList(),
@@ -402,6 +405,22 @@ class SkappViewModel : ViewModel() {
             val q = DataCache.quote(code)
             // 4) 本地引擎（吃 K 线 + holo technical）
             val engine = DataCache.engine(code, adjust, bars)
+            // 4.5) 回本率实证 + 云端引擎投票 (本地实时算, 与云端口径一致)
+            val recoupR = RecoupCalc.compute(bars)
+            val votes = run {
+                val f = TechnicalCalc.compute(bars)
+                val v = mutableListOf<String>()
+                if (f != null) {
+                    // 引擎样本: trend/momentum/volume 三路+回本 gate
+                    val le = LocalEngine.analyze(bars)
+                    val valid = le.engines.count { it.score >= 55 }
+                    if (valid >= 4) v.add("本地${valid}引擎看多")
+                }
+                if (recoupR.recoup22 != null && recoupR.recoup22 < 70.0) v.add("回本率仅${"%.0f".format(recoupR.recoup22)}%慎入")
+                if (recoupR.posInYear != null && recoupR.posInYear > 90.0) v.add("一年${"%.0f".format(recoupR.posInYear)}%分位高位")
+                if (v.isEmpty()) v.add("无强信号")
+                v.joinToString(" · ")
+            }
             // 5) 资金流：holo 优先，退化东财
             val flow = holo.moneyflow.ifEmpty { DataCache.fundFlow(code, 60) }
             // 6) 板块：东财实时 + 云端
@@ -419,6 +438,8 @@ class SkappViewModel : ViewModel() {
                 detailLoading = false,
                 detail = merged,
                 localEngine = engine,
+                recoup = recoupR,
+                engineVotes = votes,
                 fundFlow = flow,
                 boardsOf = boards,
                 liveQuote = q,
