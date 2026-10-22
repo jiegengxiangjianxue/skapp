@@ -416,8 +416,10 @@ class SkappViewModel : ViewModel() {
                     val valid = le.engines.count { it.score >= 55 }
                     if (valid >= 4) v.add("本地${valid}引擎看多")
                 }
-                if (recoupR.recoup22 != null && recoupR.recoup22 < 70.0) v.add("回本率仅${"%.0f".format(recoupR.recoup22)}%慎入")
-                if (recoupR.posInYear != null && recoupR.posInYear > 90.0) v.add("一年${"%.0f".format(recoupR.posInYear)}%分位高位")
+                val r22 = recoupR.recoup22
+                if (r22 != null && r22 < 70.0) v.add("回本率仅${"%.0f".format(r22)}%慎入")
+                val py = recoupR.posInYear
+                if (py != null && py > 90.0) v.add("一年${"%.0f".format(py)}%分位高位")
                 if (v.isEmpty()) v.add("无强信号")
                 v.joinToString(" · ")
             }
