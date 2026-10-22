@@ -592,11 +592,17 @@ class SkappViewModel : ViewModel() {
         return sb.toString()
     }
 
-    /** 本地实时选股（不用云端旧快照） */
+    /** 本地实时选股 v2: 腾讯批量行情(免403) + 全并发超时 + 重入保护 + 进度回调 */
+    private var screeningJob: kotlinx.coroutines.Job? = null
     fun runScreen() {
-        viewModelScope.launch {
-            _state.value = _state.value.copy(screening = true, screenMsg = "正在实时拉取全市场行情…")
-            val res = runCatching { LocalScreener.screen() }.getOrElse {
+        if (screeningJob?.isActive == true) return   // 重入保护: 点快了不重复跑
+        screeningJob = viewModelScope.launch {
+            _state.value = _state.value.copy(screening = true, screenMsg = "实时选股中… 0/0")
+            val res = runCatching {
+                LocalScreenerV2.screen { done, total ->
+                    _state.value = _state.value.copy(screenMsg = "实时选股中… $done/$total")
+                }
+            }.getOrElse {
                 _state.value = _state.value.copy(
                     screening = false,
                     screenMsg = "实时选股失败：${it.message ?: "行情接口不可达"}",
