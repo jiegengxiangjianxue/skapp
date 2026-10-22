@@ -98,7 +98,7 @@ fun PicksScreen(vm: SkappViewModel, state: UiState) {
                     if (state.screening) {
                         CircularProgressIndicator()
                     } else {
-                        Card(modifier = Modifier.clickable { vm.runScreen() },
+                        Card(modifier = Modifier.clickable { vm.runScreen(force = true) },
                             colors = CardDefaults.cardColors()) {
                             Text("开始实时选股", Modifier.padding(10.dp),
                                 color = MaterialTheme.colorScheme.primary,
