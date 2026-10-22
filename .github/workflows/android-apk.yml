@@ -22,7 +22,7 @@ jobs:
       - name: Build debug APK
         run: |
           gradle wrapper --gradle-version 8.9 || true
-          ./gradlew assembleDebug --no-daemon
+          ./gradlew assembleDebug --no-daemon --no-build-cache
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
