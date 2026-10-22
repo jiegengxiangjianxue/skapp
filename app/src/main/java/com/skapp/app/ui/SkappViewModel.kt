@@ -599,7 +599,7 @@ class SkappViewModel : ViewModel() {
         screeningJob = viewModelScope.launch {
             _state.value = _state.value.copy(screening = true, screenMsg = "实时选股中… 0/0")
             val res = runCatching {
-                ScreenV2.screen { done, total ->
+                LocalScreener.screenV2 { done, total ->
                     _state.value = _state.value.copy(screenMsg = "实时选股中… $done/$total")
                 }
             }.getOrElse {
