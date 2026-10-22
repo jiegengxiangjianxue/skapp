@@ -401,11 +401,14 @@ class SkappViewModel : ViewModel() {
         openDetail(code, adjust)
     }
 
+    @Volatile private var detailJob: kotlinx.coroutines.Job? = null
     fun openDetail(code: String, adjust: String = "qfq") {
         val same = _state.value.detail?.code == code &&
             _state.value.detailAdjust == adjust &&
             _state.value.holo != null
-        viewModelScope.launch {
+        // 重入保护: 已在加载同一票时直接返回（点快不叠加并发请求 = 卡死元凶之二）
+        if (same && detailJob?.isActive == true) return
+        detailJob = viewModelScope.launch {
             _state.value = _state.value.copy(detailLoading = !same, detailAdjust = adjust)
             // 1) stocks-holo（网页版同源：kline/technical/finance/moneyflow/news/sentiment）
             val holo = HoloClient.full(code)
