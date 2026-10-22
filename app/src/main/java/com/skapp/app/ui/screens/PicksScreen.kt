@@ -42,11 +42,11 @@ fun PicksScreen(vm: SkappViewModel, state: UiState) {
     val p = state.picks
     var tab by remember { mutableStateOf(0) }
 
-    // 本地实时为默认（用户核心诉求：不用云端旧快照）；云端池做兜底
+    // 本地实时为默认；指标共振/多维评分也走本地实时结果（screenV2 派生），云端快照仅兜底
     val tabs = listOf(
         "本地实时" to emptyList<com.skapp.app.data.PickSignal>(),
-        "指标共振" to p.signals,
-        "多维评分" to p.values,
+        "指标共振" to (state.liveSignals.ifEmpty { p.signals }),
+        "多维评分" to (state.liveValues.ifEmpty { p.values }),
         "涨停" to p.limitUp,
     )
 
