@@ -140,19 +140,6 @@ object LocalScreener {
         val klineCount: Int = 120,
     )
 
-    data class Screened(
-        val code: String,
-        val name: String?,
-        val price: Double?,
-        val pctChg: Double?,
-        val volRatio: Double?,
-        val turnover: Double?,
-        val pe: Double?,
-        val mv: Double?,
-        val engine: LocalEngineResult?,
-        val detailStatus: String,
-        val reason: String? = null,
-    )
 
     /** 腾讯批量实时行情: 一次最多 ~80 票, 返回 code->(name,price,pctChg,vol,turnover,pe,mv) */
     suspend fun tencentSnapshot(pool: List<String>): List<Map<String, Any?>> =
