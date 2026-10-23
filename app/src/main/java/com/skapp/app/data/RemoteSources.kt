@@ -35,11 +35,11 @@ object RemoteSources {
         "56" to "jiegengxiangjianxue3/db-stocks-d",
         "58" to "jiegengxiangjianxue3/db-stocks-d",
         "20" to "jiegengxiangjianxue3/db-stocks-d",
-        "81" to "jiegengxiangjianxue3/db-stocks-e",
-        "83" to "jiegengxiangjianxue3/db-stocks-e",
-        "89" to "jiegengxiangjianxue3/db-stocks-e",
-        "90" to "jiegengxiangjianxue3/db-stocks-e",
-        "92" to "jiegengxiangjianxue3/db-stocks-e",
+        "81" to "jiegengxiangjianxue3/db-stocks-d",
+        "83" to "jiegengxiangjianxue3/db-stocks-d",
+        "89" to "jiegengxiangjianxue3/db-stocks-d",
+        "90" to "jiegengxiangjianxue3/db-stocks-d",
+        "92" to "jiegengxiangjianxue3/db-stocks-d",
     )
 
     /** 腾讯实时行情（app 自选股 30s 刷新用，与站点直连兜底同源） */
