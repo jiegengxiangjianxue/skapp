@@ -19,13 +19,13 @@ object LocalLlmManager {
     data class ModelInfo(val name: String, val file: String, val bytes: Long, val desc: String)
 
     val CATALOG = listOf(
-        ModelInfo("Qwen3-0.6B (中文金融特化提示)", "Qwen_Qwen3-0.6B-Q4_K_M.gguf", 508_000_000L,
+        ModelInfo("Qwen3-0.6B Q4_K_M (手机端首选)", "Qwen3-0.6B-Q4_K_M.gguf", 484_220_320L,
             "0.6B Q4量化, 16GB机型流畅, 盘中本地问答"),
     )
 
     private const val RAW_BASE = "https://raw.githubusercontent.com/jiegengxiangjianxue/llm-models/main/models"
     // GitHub 100MB 限制: GGUF 已分片 (qwen06b_q8.part-00..06), 下载全部后合并
-    private val PARTS = (0..6).map { "qwen06b_q8.part-%02d".format(it) }
+    private val PARTS = (0..5).map { "qwen06b_q4.part-%02d".format(it) }
 
     fun modelFile(dir: File, m: ModelInfo): File = File(dir, "llm/${m.file}")
 
@@ -40,7 +40,7 @@ object LocalLlmManager {
             try {
                 val outDir = File(dir, "llm"); outDir.mkdirs()
                 val merged = File(outDir, "Qwen3-0.6B-Q8_0.gguf")
-                if (merged.exists() && merged.length() > 600_000_000) return@withContext Result.success(merged)
+                if (merged.exists() && merged.length() > 450_000_000) return@withContext Result.success(merged)
                 for ((idx, part) in PARTS.withIndex()) {
                     val dst = File(outDir, part)
                     if (dst.exists() && dst.length() > 90_000_000L) continue
@@ -60,7 +60,7 @@ object LocalLlmManager {
                 java.io.FileOutputStream(merged).use { fos ->
                     PARTS.forEach { p -> File(outDir, p).inputStream().use { it.copyTo(fos) } }
                 }
-                check(merged.length() > 600_000_000L) { "merged too small" }
+                check(merged.length() > 450_000_000L) { "merged too small" }
                 Result.success(merged)
             } catch (e: Exception) { Result.failure(e) }
         }
