@@ -24,6 +24,8 @@ object LocalLlmManager {
     )
 
     private const val RAW_BASE = "https://raw.githubusercontent.com/jiegengxiangjianxue/llm-models/main/models"
+    // GitHub 100MB 限制: GGUF 已分片 (qwen06b_q8.part-00..06), 下载全部后合并
+    private val PARTS = (0..6).map { "qwen06b_q8.part-%02d".format(it) }
 
     fun modelFile(dir: File, m: ModelInfo): File = File(dir, "llm/${m.file}")
 
@@ -31,6 +33,37 @@ object LocalLlmManager {
         val f = modelFile(dir, m)
         return f.exists() && f.length() > m.bytes * 9 / 10  // 容差
     }
+
+    /** 分片下载(每片断点续传) + 按序合并 */
+    suspend fun downloadParts(dir: File, onProgress: (Int) -> Unit): Result<File> =
+        withContext(Dispatchers.IO) {
+            try {
+                val outDir = File(dir, "llm"); outDir.mkdirs()
+                val merged = File(outDir, "Qwen3-0.6B-Q8_0.gguf")
+                if (merged.exists() && merged.length() > 600_000_000) return@withContext Result.success(merged)
+                for ((idx, part) in PARTS.withIndex()) {
+                    val dst = File(outDir, part)
+                    if (dst.exists() && dst.length() > 90_000_000L) continue
+                    val tmp = File(dst.absolutePath + ".part")
+                    val conn = URL("$RAW_BASE/$part").openConnection() as HttpURLConnection
+                    if (tmp.exists()) conn.setRequestProperty("Range", "bytes=${tmp.length()}-")
+                    conn.connectTimeout = 30000; conn.readTimeout = 60000; conn.instanceFollowRedirects = true
+                    conn.inputStream.use { ins -> java.io.FileOutputStream(tmp, true).use { fos ->
+                        val buf = ByteArray(1 shl 16); var n: Int
+                        while (ins.read(buf).also { n = it } > 0) fos.write(buf, 0, n)
+                    } }
+                    check(tmp.length() > 70_000_000L) { "part $idx too small: ${'$'}{tmp.length()}" }
+                    if (dst.exists()) dst.delete()
+                    check(tmp.renameTo(dst)) { "rename $idx" }
+                    onProgress(idx * 100 / PARTS.size)
+                }
+                java.io.FileOutputStream(merged).use { fos ->
+                    PARTS.forEach { p -> File(outDir, p).inputStream().use { it.copyTo(fos) } }
+                }
+                check(merged.length() > 600_000_000L) { "merged too small" }
+                Result.success(merged)
+            } catch (e: Exception) { Result.failure(e) }
+        }
 
     /** 下载/断点续传, onProgress: 0..100 */
     suspend fun download(dir: File, m: ModelInfo, onProgress: (Int) -> Unit): Result<File> =
