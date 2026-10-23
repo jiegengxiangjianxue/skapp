@@ -25,7 +25,7 @@ object LocalLlmManager {
 
     private const val RAW_BASE = "https://raw.githubusercontent.com/jiegengxiangjianxue/llm-models/main/models"
     // GitHub 100MB 限制: GGUF 已分片 (qwen06b_q8.part-00..06), 下载全部后合并
-    private val PARTS = (0..5).map { "qwen06b_q4.part-%02d".format(it) }
+    private val PARTS = (0..23).map { "qwen06b_q4.part-%02d".format(it) }
 
     fun modelFile(dir: File, m: ModelInfo): File = File(dir, "llm/${m.file}")
 
@@ -43,7 +43,7 @@ object LocalLlmManager {
                 if (merged.exists() && merged.length() > 450_000_000) return@withContext Result.success(merged)
                 for ((idx, part) in PARTS.withIndex()) {
                     val dst = File(outDir, part)
-                    if (dst.exists() && dst.length() > 90_000_000L) continue
+                    if (dst.exists() && dst.length() > 19_000_000L) continue
                     val tmp = File(dst.absolutePath + ".part")
                     val conn = URL("$RAW_BASE/$part").openConnection() as HttpURLConnection
                     if (tmp.exists()) conn.setRequestProperty("Range", "bytes=${tmp.length()}-")
@@ -52,7 +52,7 @@ object LocalLlmManager {
                         val buf = ByteArray(1 shl 16); var n: Int
                         while (ins.read(buf).also { n = it } > 0) fos.write(buf, 0, n)
                     } }
-                    check(tmp.length() > 70_000_000L) { "part $idx too small: ${'$'}{tmp.length()}" }
+                    check(tmp.length() > 15_000_000L) { "part $idx too small: ${'$'}{tmp.length()}" }
                     if (dst.exists()) dst.delete()
                     check(tmp.renameTo(dst)) { "rename $idx" }
                     onProgress(idx * 100 / PARTS.size)
